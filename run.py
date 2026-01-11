@@ -9,6 +9,7 @@ import shutil
 import threading
 import subprocess
 import contextlib
+from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 import requests
@@ -48,6 +49,18 @@ def _save_config(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         return
+
+
+def _unique_path(folder, stem, ext):
+    base = f"{stem}{ext}"
+    path = os.path.join(folder, base)
+    if not os.path.exists(path):
+        return path
+    for i in range(2, 10000):
+        path = os.path.join(folder, f"{stem}_{i}{ext}")
+        if not os.path.exists(path):
+            return path
+    raise RuntimeError("Gagal membuat nama file output unik.")
 
 
 def _format_hhmmss(seconds):
@@ -219,7 +232,7 @@ def generate_subtitle(video_file, subtitle_file):
         return False
 
 
-def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default", use_subtitle=False, output_dir=None, apply_padding=True, event_cb=None):
+def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default", use_subtitle=False, subtitle_position="middle", output_dir=None, apply_padding=True, event_cb=None):
     start_original = float(item.get("start", 0))
     if "end" in item:
         end_original = float(item.get("end", start_original))
@@ -240,10 +253,13 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
         output_dir = _default_output_dir()
     os.makedirs(output_dir, exist_ok=True)
 
-    temp_file = os.path.join(output_dir, f"temp_{index}.mp4")
-    cropped_file = os.path.join(output_dir, f"temp_cropped_{index}.mp4")
-    subtitle_file = os.path.join(output_dir, f"temp_{index}.srt")
-    output_file = os.path.join(output_dir, f"clip_{index}.mp4")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = uuid.uuid4().hex[:8]
+    stem = f"clip_{index}_{ts}_{tag}"
+    temp_file = _unique_path(output_dir, f"temp_{index}_{ts}_{tag}", ".mp4")
+    cropped_file = _unique_path(output_dir, f"temp_cropped_{index}_{ts}_{tag}", ".mp4")
+    subtitle_file = _unique_path(output_dir, f"temp_{index}_{ts}_{tag}", ".srt")
+    output_file = _unique_path(output_dir, stem, ".mp4")
 
     cmd_download = [
         sys.executable, "-m", "yt_dlp",
@@ -328,10 +344,32 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
                     event_cb({"stage": "subtitle_burn", "clip_index": index})
                 abs_subtitle_path = os.path.abspath(subtitle_file)
                 subtitle_path = abs_subtitle_path.replace("\\", "/").replace(":", "\\:")
+                pos = str(subtitle_position or "middle").strip().lower()
+                if pos in ("bottom", "bawah"):
+                    alignment = 2
+                    margin_v = 60
+                elif pos in ("top", "atas"):
+                    alignment = 8
+                    margin_v = 60
+                else:
+                    alignment = 5
+                    margin_v = 0
+                force_style = (
+                    "FontName=Arial,"
+                    "FontSize=12,"
+                    "Bold=1,"
+                    "PrimaryColour=&HFFFFFF,"
+                    "OutlineColour=&H000000,"
+                    "BorderStyle=1,"
+                    "Outline=2,"
+                    "Shadow=1,"
+                    f"Alignment={alignment},"
+                    f"MarginV={margin_v}"
+                )
                 cmd_subtitle = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", cropped_file,
-                    "-vf", f"subtitles='{subtitle_path}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=100'",
+                    "-vf", f"subtitles='{subtitle_path}':force_style='{force_style}'",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
                     "-c:a", "copy",
                     output_file
@@ -372,7 +410,7 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
         return False
 
 
-def proses_dengan_segmen(link, segments, crop_mode="default", use_subtitle=False, whisper_model=None, output_dir=None, apply_padding=False, event_cb=None):
+def proses_dengan_segmen(link, segments, crop_mode="default", use_subtitle=False, whisper_model=None, subtitle_position="middle", output_dir=None, apply_padding=False, event_cb=None):
     global WHISPER_MODEL
 
     if whisper_model:
@@ -418,6 +456,7 @@ def proses_dengan_segmen(link, segments, crop_mode="default", use_subtitle=False
             total_duration=total_duration,
             crop_mode=crop_mode,
             use_subtitle=use_subtitle,
+            subtitle_position=subtitle_position,
             output_dir=output_dir,
             apply_padding=apply_padding,
             event_cb=event_cb
@@ -531,6 +570,7 @@ def _run_job(job_id, payload):
                 crop_mode=payload["crop_mode"],
                 use_subtitle=payload["use_subtitle"],
                 whisper_model=payload.get("whisper_model"),
+                subtitle_position=payload.get("subtitle_position", "middle"),
                 output_dir=payload.get("output_dir"),
                 apply_padding=payload.get("apply_padding", False),
                 event_cb=event_cb
@@ -569,7 +609,7 @@ HTML = r"""
     label { display: block; font-size: 12px; color: #b8c6d6; margin-bottom: 6px; }
     input[type="text"], input[type="number"], select { width: 100%; box-sizing: border-box; padding: 10px 10px; border-radius: 10px; border: 1px solid #253246; background: #0b111a; color: #e8edf2; }
     .row { display: flex; gap: 10px; align-items: center; }
-    .row > * { flex: 1; }
+    .row > * { flex: 1; min-width: 0; }
     .btn { padding: 10px 12px; border-radius: 10px; border: 1px solid #2a3b56; background: #132033; color: #e8edf2; cursor: pointer; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }
     .btn:hover { background: #162844; border-color: #3a5378; }
     .btn:active { transform: translateY(1px); }
@@ -600,10 +640,12 @@ HTML = r"""
     .seglist tr.activeSeg { background: rgba(43, 92, 255, 0.12); }
     .progress { height: 14px; background: #0b111a; border: 1px solid #1f2a3a; border-radius: 999px; overflow: hidden; }
     .bar { height: 100%; width: 0%; background: linear-gradient(90deg, #2b5cff, #48d0ff); transition: width 180ms ease; }
+    #log { margin-top: 10px; }
+    #log:empty { display: none; }
     pre { white-space: pre-wrap; word-wrap: break-word; background: #0b111a; border: 1px solid #1f2a3a; border-radius: 12px; padding: 10px; height: 220px; overflow: auto; }
     .modal { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; padding: 16px; background: rgba(0,0,0,0.65); overflow: auto; }
     .modal.on { display: flex; }
-    .modal .box { width: min(720px, 100%); background: #111824; border: 1px solid #1f2a3a; border-radius: 14px; padding: 14px; max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; }
+    .modal .box { width: min(980px, 100%); background: #111824; border: 1px solid #1f2a3a; border-radius: 14px; padding: 14px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
     .modal .box h3 { margin: 0 0 10px 0; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
     @media (max-width: 900px) { .wrap { max-width: 100%; } }
@@ -765,6 +807,11 @@ HTML = r"""
                 <option>medium</option>
                 <option>large-v3</option>
               </select>
+              <select id="subPos" title="Posisi subtitle: bawah / tengah / atas.">
+                <option value="bottom">Bawah</option>
+                <option value="middle" selected>Tengah</option>
+                <option value="top">Atas</option>
+              </select>
             </div>
           </div>
         </div>
@@ -836,7 +883,6 @@ HTML = r"""
           <div class="muted" id="status">Idle</div>
           <div class="muted" id="eta" style="text-align:right"></div>
         </div>
-        <div style="height:10px"></div>
         <pre id="log" class="mono"></pre>
       </div>
     </div>
@@ -879,17 +925,11 @@ HTML = r"""
       </div>
       <div style="height:10px"></div>
       <div class="row">
-        <button class="btn" id="segPlay" title="Play/Pause preview segmen.">Play/Pause</button>
-        <button class="btn" id="segStop" title="Stop dan kembali ke start segmen.">Stop</button>
         <label style="display:flex;gap:8px;align-items:center;justify-content:flex-end" title="Aktif/nonaktif segmen ini untuk diproses.">
           <input id="segEnabled" type="checkbox" />
           Enable segmen
         </label>
       </div>
-      <div style="height:10px"></div>
-      <label title="Geser untuk lompat ke posisi dalam segmen.">Timeline segmen</label>
-      <input id="segTimeline" type="range" min="0" max="0" value="0" />
-      <div class="muted"><span id="segCur">00:00</span> / <span id="segDur">00:00</span></div>
       <div style="height:12px"></div>
       <h3 style="margin:0 0 10px 0">Edit Segment</h3>
       <div class="row">
@@ -1010,7 +1050,6 @@ HTML = r"""
     let currentVideoId = null;
 
     let segPlayer = null;
-    let segPreviewStopAt = null;
     let segStart = 0;
     let segEnd = 0;
 
@@ -1037,6 +1076,7 @@ HTML = r"""
       if (cfg.crop_mode) $('crop').value = cfg.crop_mode;
       if (cfg.use_subtitle !== undefined) $('subOn').checked = !!cfg.use_subtitle;
       if (cfg.whisper_model) $('model').value = cfg.whisper_model;
+      if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
       if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
       syncOutMode();
       syncSub();
@@ -1048,6 +1088,7 @@ HTML = r"""
       crop_mode: $('crop').value,
       use_subtitle: $('subOn').checked,
       whisper_model: $('model').value,
+      subtitle_position: $('subPos').value,
       preview_seconds: parseInt($('previewSecs').value || '30', 10)
     });
 
@@ -1067,6 +1108,7 @@ HTML = r"""
 
     const syncSub = () => {
       $('model').disabled = !$('subOn').checked;
+      $('subPos').disabled = !$('subOn').checked;
     };
 
     const ensureYTApi = (() => {
@@ -1142,7 +1184,6 @@ HTML = r"""
       segPlayer = null;
       const holder = $('segPlayer');
       if (holder) holder.innerHTML = '';
-      segPreviewStopAt = null;
       segStart = 0;
       segEnd = 0;
     };
@@ -1174,15 +1215,8 @@ HTML = r"""
 
       segStart = start;
       segEnd = end;
-      segPreviewStopAt = end;
       $('segEditStart').value = fmt(start);
       $('segEditEnd').value = fmt(end);
-      $('segTimeline').min = String(start);
-      $('segTimeline').max = String(end);
-      $('segTimeline').value = String(start);
-      syncRangeFill($('segTimeline'));
-      $('segCur').textContent = fmt(start);
-      $('segDur').textContent = fmt(end-start);
 
       destroySegPlayer();
       openSegModal();
@@ -1197,25 +1231,6 @@ HTML = r"""
           onReady: (e) => {
             try { e.target.setPlaybackQuality('large'); } catch {}
             try { e.target.seekTo(start, true); } catch {}
-            try { e.target.playVideo(); } catch {}
-            const tick = () => {
-              try {
-                if (!segPlayer) return;
-                const startNow = segStart;
-                const endNow = segEnd;
-                const ct = segPlayer.getCurrentTime ? segPlayer.getCurrentTime() : startNow;
-                const cur = Math.max(startNow, Math.min(endNow, ct));
-                $('segTimeline').value = String(Math.floor(cur));
-                syncRangeFill($('segTimeline'));
-                $('segCur').textContent = fmt(cur - startNow);
-                if (segPreviewStopAt !== null && ct >= segPreviewStopAt) {
-                  segPlayer.pauseVideo();
-                  segPreviewStopAt = null;
-                }
-              } catch {}
-              requestAnimationFrame(tick);
-            };
-            requestAnimationFrame(tick);
           }
         }
       });
@@ -1344,6 +1359,7 @@ HTML = r"""
         crop_mode: $('crop').value,
         use_subtitle: $('subOn').checked,
         whisper_model: $('model').value,
+        subtitle_position: $('subPos').value,
         output_dir: outDir
       };
       const res = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -1502,28 +1518,6 @@ HTML = r"""
       }
     });
 
-    $('segTimeline').addEventListener('input', () => {
-      if (!segPlayer) return;
-      const v = parseInt(($('segTimeline').value || String(segStart)), 10);
-      if (Number.isNaN(v)) return;
-      syncRangeFill($('segTimeline'));
-      try { segPlayer.seekTo(v, true); } catch {}
-    });
-
-    $('segPlay').addEventListener('click', () => {
-      if (!segPlayer) return;
-      const st = segPlayer.getPlayerState ? segPlayer.getPlayerState() : 0;
-      if (st === 1) segPlayer.pauseVideo();
-      else segPlayer.playVideo();
-    });
-
-    $('segStop').addEventListener('click', () => {
-      if (!segPlayer) return;
-      segPreviewStopAt = null;
-      try { segPlayer.pauseVideo(); } catch {}
-      try { segPlayer.seekTo(segStart, true); } catch {}
-    });
-
     $('segEnabled').addEventListener('change', () => {
       if (activeSegIdx === null) return;
       if (!segments[activeSegIdx]) return;
@@ -1608,7 +1602,6 @@ HTML = r"""
       if (!$('previewSecs').value) $('previewSecs').value = '30';
       $('url').value = '';
       syncRangeFill($('timeline'));
-      syncRangeFill($('segTimeline'));
       renderSegs();
     })();
   </script>
@@ -1631,6 +1624,8 @@ def api_get_config():
         cfg["output_mode"] = "default"
     if "preview_seconds" not in cfg:
         cfg["preview_seconds"] = 30
+    if "subtitle_position" not in cfg:
+        cfg["subtitle_position"] = "middle"
     return jsonify(cfg)
 
 
@@ -1638,7 +1633,7 @@ def api_get_config():
 def api_set_config():
     data = request.get_json(silent=True) or {}
     cfg = _load_config()
-    for k in ("output_mode", "output_dir", "crop_mode", "use_subtitle", "whisper_model", "preview_seconds"):
+    for k in ("output_mode", "output_dir", "crop_mode", "use_subtitle", "whisper_model", "subtitle_position", "preview_seconds"):
         if k in data:
             cfg[k] = data[k]
     _save_config(cfg)
@@ -1685,6 +1680,9 @@ def api_start():
     crop_mode = str(data.get("crop_mode", "default")).strip() or "default"
     use_subtitle = bool(data.get("use_subtitle", False))
     whisper_model = str(data.get("whisper_model", WHISPER_MODEL)).strip() or WHISPER_MODEL
+    subtitle_position = str(data.get("subtitle_position", "middle")).strip().lower() or "middle"
+    if subtitle_position not in ("bottom", "middle", "top"):
+        subtitle_position = "middle"
     output_dir = data.get("output_dir")
     if output_dir is None or str(output_dir).strip() == "":
         output_dir = _default_output_dir()
@@ -1745,6 +1743,7 @@ def api_start():
         "crop_mode": crop_mode if crop_mode in ("default", "split_left", "split_right") else "default",
         "use_subtitle": use_subtitle,
         "whisper_model": whisper_model,
+        "subtitle_position": subtitle_position,
         "output_dir": output_dir,
         "apply_padding": False,
         "total_clips": len(enabled_segments)
@@ -1759,6 +1758,7 @@ def api_start():
     cfg["crop_mode"] = payload["crop_mode"]
     cfg["use_subtitle"] = use_subtitle
     cfg["whisper_model"] = whisper_model
+    cfg["subtitle_position"] = subtitle_position
     _save_config(cfg)
 
     return jsonify({"ok": True, "job_id": job_id, "estimated_bytes": est_bytes})
