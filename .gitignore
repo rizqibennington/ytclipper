@@ -53,6 +53,11 @@ models/
 # Logs
 *.log
 
+# FFmpeg binaries (auto-downloaded)
+bin/
+ffmpeg.exe
+ffprobe.exe
+
 # Test files
 test.py
 debug_*.py
