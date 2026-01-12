@@ -1,9 +1,6 @@
 # Output clips
 clips/
-*.mp4
-*.mkv
-*.avi
-*.mov
+clip_*.mp4
 
 # Temporary files
 temp_*.mp4
