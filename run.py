@@ -599,7 +599,11 @@ HTML = r"""
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>yt-heatmap-clipper</title>
+  <title>YTClipper</title>
+  <meta name="application-name" content="YTClipper" />
+  <meta name="apple-mobile-web-app-title" content="YTClipper" />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2214%22%20rx%3D%223%22%20fill%3D%22%23111824%22%20stroke%3D%22%2348d0ff%22%20stroke-width%3D%221.6%22/%3E%3Cpath%20d%3D%22M10%209v6l6-3z%22%20fill%3D%22%2348d0ff%22/%3E%3C/svg%3E" />
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #0b0f14; color: #e8edf2; }
     .wrap { max-width: 920px; margin: 0 auto; padding: 18px; }
