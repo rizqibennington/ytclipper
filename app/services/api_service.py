@@ -1,9 +1,13 @@
 import uuid
 
+import os
+import subprocess
+import sys
+
 from config_store import default_output_dir, load_config, save_config
 from clipper import estimate_total_size_bytes
 from heatmap import ambil_most_replayed
-from jobs import create_job, start_job
+from jobs import create_job, get_job, start_job
 from subtitle_ai import get_whisper_model
 from yt_info import extract_video_id, get_duration
 
@@ -125,3 +129,28 @@ def start_clip_job(data):
 
     return {"ok": True, "job_id": job_id, "estimated_bytes": est_bytes}
 
+
+def _open_folder(path):
+    if not os.path.isdir(path):
+        raise ValueError("Folder output tidak ditemukan di komputer ini.")
+
+    if sys.platform.startswith("win"):
+        os.startfile(path)
+        return
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+        return
+    subprocess.Popen(["xdg-open", path])
+
+
+def open_output_folder(job_id):
+    job = get_job(job_id)
+    if not job:
+        raise ValueError("Job tidak ditemukan.")
+
+    output_dir = job.get("output_dir")
+    if not output_dir:
+        raise ValueError("Output folder tidak tersedia.")
+
+    _open_folder(str(output_dir))
+    return {"ok": True}

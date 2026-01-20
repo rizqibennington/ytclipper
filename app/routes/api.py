@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from config_store import default_output_dir, load_config, save_config
 from jobs import get_job
-from app.services.api_service import get_heatmap_segments, get_video_info, start_clip_job
+from app.services.api_service import get_heatmap_segments, get_video_info, open_output_folder, start_clip_job
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -87,3 +87,13 @@ def api_status(job_id):
             "logs": logs,
         }
     )
+
+
+@api_bp.post("/open_output/<job_id>")
+def api_open_output(job_id):
+    try:
+        return jsonify(open_output_folder(job_id))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})

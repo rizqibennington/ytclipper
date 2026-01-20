@@ -315,6 +315,15 @@ HTML = r"""
               <span>Review & Proses</span>
             </span>
           </button>
+          <button class="btn" id="openFolder" title="Buka folder output (hasil clip)." style="display:none">
+            <span class="btnLabel">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
+                <path d="M3 7V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2"></path>
+              </svg>
+              <span>Lihat Folder</span>
+            </span>
+          </button>
         </div>
         <div style="height:12px"></div>
         <div class="progress"><div class="bar" id="bar"></div></div>
@@ -491,6 +500,13 @@ HTML = r"""
     let segPlayer = null;
     let segStart = 0;
     let segEnd = 0;
+
+    const setOpenFolderVisible = (on) => {
+      const btn = $('openFolder');
+      if (!btn) return;
+      btn.style.display = on ? 'inline-flex' : 'none';
+      btn.disabled = !on;
+    };
 
     const setHeatmapLoading = (on) => {
       const btn = $('loadHeatmap');
@@ -794,6 +810,8 @@ HTML = r"""
         if (data.done) {
           clearInterval(pollTimer);
           pollTimer = null;
+          const canOpen = !data.error && data.success_count > 0 && !!data.output_dir;
+          setOpenFolderVisible(canOpen);
           if (data.error) {
             alert('❌ Proses gagal!\\n\\n' + data.error);
           } else if (data.success_count > 0) {
@@ -817,6 +835,7 @@ HTML = r"""
         subtitle_position: $('subPos').value,
         output_dir: outDir
       };
+      setOpenFolderVisible(false);
       setLog('🚀 Memulai proses...');
       setProgress(0, 'Memulai...', '', true);
       const res = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -943,6 +962,16 @@ HTML = r"""
         closeModal();
         await startJob();
       } catch(e) {
+        alert(e.message);
+      }
+    });
+    $('openFolder').addEventListener('click', async () => {
+      if (!jobId) return;
+      try {
+        const res = await fetch('/api/open_output/' + jobId, { method:'POST' });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal membuka folder output.');
+      } catch (e) {
         alert(e.message);
       }
     });
@@ -1092,4 +1121,3 @@ HTML = r"""
 </body>
 </html>
 """
-
