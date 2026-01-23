@@ -42,8 +42,26 @@ def _extract_balanced(text, start_index, open_ch, close_ch):
 def _extract_assigned_json(text, var_name):
     m = re.search(rf"(?:var\s+)?{re.escape(var_name)}\s*=\s*", text)
     if not m:
-        return None
+        m = re.search(rf'(?:window\[\s*"{re.escape(var_name)}"\s*\])\s*=\s*', text)
+        if not m:
+            return None
     start = text.find("{", m.end())
+    if start < 0:
+        return None
+    raw = _extract_balanced(text, start, "{", "}")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _extract_ytcfg(text):
+    m = re.search(r"ytcfg\.set\(\s*\{", text)
+    if not m:
+        return None
+    start = text.find("{", m.end() - 1)
     if start < 0:
         return None
     raw = _extract_balanced(text, start, "{", "}")
@@ -88,6 +106,100 @@ def _collect_heat_markers(root):
     return found
 
 
+def _collect_chapter_starts(root):
+    starts = []
+    for d in _walk_json(root):
+        cr = d.get("chapterRenderer")
+        if not isinstance(cr, dict):
+            continue
+        start_ms = cr.get("timeRangeStartMillis")
+        if start_ms is None:
+            start_ms = cr.get("startMillis")
+        if start_ms is None:
+            continue
+        try:
+            starts.append(float(start_ms) / 1000.0)
+        except Exception:
+            continue
+    starts = sorted(set(starts))
+    return starts
+
+
+def _build_chapter_segments(chapter_starts, duration_seconds):
+    if not chapter_starts:
+        return []
+    if duration_seconds is None:
+        return []
+    try:
+        dur_total = float(duration_seconds)
+    except Exception:
+        return []
+    if dur_total <= 0:
+        return []
+
+    starts = [s for s in chapter_starts if 0 <= s < dur_total]
+    if 0.0 not in starts:
+        starts = [0.0] + starts
+    starts = sorted(set(starts))
+
+    items = []
+    for i, s in enumerate(starts):
+        next_s = dur_total if i + 1 >= len(starts) else starts[i + 1]
+        end = min(next_s, s + float(MAX_DURATION), dur_total)
+        if end - s <= 0:
+            continue
+        items.append({"start": float(s), "duration": float(end - s), "score": 0.0})
+    return items
+
+
+def _fetch_innertube_player(video_id, ytcfg, referer_url, headers_base):
+    if not isinstance(ytcfg, dict):
+        return None
+    api_key = ytcfg.get("INNERTUBE_API_KEY")
+    if not api_key:
+        return None
+
+    ctx = ytcfg.get("INNERTUBE_CONTEXT")
+    if not isinstance(ctx, dict):
+        client_version = (
+            ytcfg.get("INNERTUBE_CONTEXT_CLIENT_VERSION")
+            or ytcfg.get("INNERTUBE_CLIENT_VERSION")
+            or ytcfg.get("INNERTUBE_CLIENT_VERSION_ALT")
+        )
+        client_name = ytcfg.get("INNERTUBE_CONTEXT_CLIENT_NAME") or ytcfg.get("INNERTUBE_CLIENT_NAME") or 1
+        if not client_version:
+            return None
+        ctx = {"client": {"clientName": str(client_name), "clientVersion": str(client_version), "hl": "en", "gl": "US"}}
+
+    client_name_hdr = ytcfg.get("INNERTUBE_CONTEXT_CLIENT_NAME") or ytcfg.get("INNERTUBE_CLIENT_NAME") or 1
+    client_ver_hdr = ytcfg.get("INNERTUBE_CONTEXT_CLIENT_VERSION") or ytcfg.get("INNERTUBE_CLIENT_VERSION")
+    if not client_ver_hdr:
+        return None
+
+    url = f"https://www.youtube.com/youtubei/v1/player?key={api_key}"
+    headers = dict(headers_base or {})
+    headers.update(
+        {
+            "Content-Type": "application/json",
+            "Origin": "https://www.youtube.com",
+            "Referer": referer_url,
+            "X-Youtube-Client-Name": str(client_name_hdr),
+            "X-Youtube-Client-Version": str(client_ver_hdr),
+        }
+    )
+    payload = {"context": ctx, "videoId": str(video_id), "racyCheckOk": True, "contentCheckOk": True}
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=20)
+        if not res.ok:
+            return None
+        data = res.json()
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
+
+
 def _norm_score(marker):
     for k in ("intensityScoreNormalized", "heatMarkerIntensityScoreNormalized", "heatMarkerIntensityScore", "intensityScore"):
         try:
@@ -123,7 +235,7 @@ def _norm_start_duration(marker):
         return None
 
 
-def ambil_most_replayed(video_id, min_score=None, fallback_limit=10):
+def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_seconds=None):
     url = f"https://www.youtube.com/watch?v={video_id}"
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -138,7 +250,15 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10):
     except Exception:
         return []
 
+    lower = html.lower()
+    if "/sorry/" in lower or "unusual traffic" in lower or "detected unusual traffic" in lower:
+        raise ValueError(
+            "YouTube menolak request (robot check). Coba buka videonya sekali di browser, lalu coba lagi. "
+            "Kalau masih sama: matikan VPN/proxy, ganti jaringan, atau tunggu beberapa menit."
+        )
+
     all_markers = []
+    chapter_starts = []
 
     pos = html.find('"markers"')
     if pos >= 0:
@@ -156,6 +276,13 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10):
         root = _extract_assigned_json(html, var_name)
         if root:
             all_markers.extend(_collect_heat_markers(root))
+            chapter_starts.extend(_collect_chapter_starts(root))
+
+    ytcfg = _extract_ytcfg(html)
+    player = _fetch_innertube_player(video_id, ytcfg, url, headers) if ytcfg else None
+    if player:
+        all_markers.extend(_collect_heat_markers(player))
+        chapter_starts.extend(_collect_chapter_starts(player))
 
     normalized = {}
     for marker in all_markers:
@@ -187,5 +314,11 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10):
     filtered = [it for it in items if it["score"] >= threshold]
     if filtered:
         return filtered
-    return items[: max(1, int(fallback_limit))]
+    if items:
+        return items[: max(1, int(fallback_limit))]
+
+    chapter_items = _build_chapter_segments(chapter_starts, duration_seconds)
+    if chapter_items:
+        return chapter_items[: max(1, int(fallback_limit))]
+    return []
 

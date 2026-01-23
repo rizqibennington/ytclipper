@@ -59,3 +59,15 @@ def generate_subtitle(video_file, subtitle_file):
     except Exception:
         return False
 
+
+def transcribe_timestamped_segments(audio_file, language="id"):
+    model = get_faster_whisper_model()
+    segments, info = model.transcribe(audio_file, language=language)
+    out = []
+    for s in segments:
+        try:
+            out.append({"start": float(s.start), "end": float(s.end), "text": str(s.text or "").strip()})
+        except Exception:
+            continue
+    return out
+

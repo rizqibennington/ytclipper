@@ -893,13 +893,38 @@ HTML = r"""
       applyVideoInfo(infoData);
       persistCfg();
 
-      const res = await fetch('/api/heatmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Gagal load heatmap');
-      segments = data.segments || [];
-      if (!segments.length) throw new Error('Heatmap kosong: video ini tidak punya Most Replayed, atau parsing gagal.');
-      activeSegIdx = null;
-      renderSegs();
+      let heatmapErr = null;
+      try {
+        const res = await fetch('/api/heatmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, duration_seconds: infoData.duration_seconds}) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal load heatmap');
+        segments = data.segments || [];
+        if (!segments.length) throw new Error('Heatmap kosong: video ini tidak punya Most Replayed, atau parsing gagal.');
+        segments.sort((a, b) => ((Number(b.score ?? 0) - Number(a.score ?? 0)) || ((a.start|0) - (b.start|0)) || ((a.end|0) - (b.end|0))));
+        activeSegIdx = null;
+        renderSegs();
+        return;
+      } catch (e) {
+        heatmapErr = e;
+      }
+
+      const txt = $('heatmapText');
+      if (txt) txt.textContent = 'Loading (backup AI)...';
+
+      try {
+        const res = await fetch('/api/ai_segments', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, duration_seconds: infoData.duration_seconds, whisper_model: $('model').value, language: 'id'}) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal generate AI segments');
+        segments = data.segments || [];
+        if (!segments.length) throw new Error('AI segments kosong: transcript tidak cukup jelas, atau analisis gagal.');
+        segments.sort((a, b) => ((Number(b.score ?? 0) - Number(a.score ?? 0)) || ((a.start|0) - (b.start|0)) || ((a.end|0) - (b.end|0))));
+        activeSegIdx = null;
+        renderSegs();
+      } catch (aiErr) {
+        const hmsg = heatmapErr && heatmapErr.message ? heatmapErr.message : 'Gagal load heatmap';
+        const amsg = aiErr && aiErr.message ? aiErr.message : 'Gagal backup AI';
+        throw new Error(hmsg + '\n\nBackup AI juga gagal:\n' + amsg);
+      }
     };
 
     const addSeg = () => {
