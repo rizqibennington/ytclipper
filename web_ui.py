@@ -99,6 +99,13 @@ HTML = r"""
     .modal.on { display: flex; }
     .modal .box { width: min(980px, 100%); background: #111824; border: 1px solid #1f2a3a; border-radius: 14px; padding: 14px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
     .modal .box h3 { margin: 0 0 10px 0; }
+    .busy { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,0.65); z-index: 9999; }
+    .busy.on { display: flex; }
+    .busy .box { width: min(520px, 100%); background: #111824; border: 1px solid #1f2a3a; border-radius: 14px; padding: 16px; box-sizing: border-box; }
+    .busyTop { display: flex; align-items: center; gap: 12px; }
+    .busyTitle { font-size: 14px; font-weight: 700; color: #cfe0f1; }
+    .busyMsg { margin-top: 2px; font-size: 12px; color: #b8c6d6; }
+    .spinner.big { width: 34px; height: 34px; border-width: 3px; display: inline-block; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
     @media (max-width: 720px) { .summaryTop { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .wrap { max-width: 100%; } }
@@ -460,6 +467,18 @@ HTML = r"""
     </div>
   </div>
 
+  <div class="busy" id="busy">
+    <div class="box">
+      <div class="busyTop">
+        <span class="spinner big"></span>
+        <div>
+          <div class="busyTitle" id="busyTitle">Loading</div>
+          <div class="busyMsg" id="busyMsg">Mohon tunggu...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const DEFAULT_OUTDIR = {{ default_output_dir | tojson }};
@@ -515,6 +534,66 @@ HTML = r"""
     let segPlayer = null;
     let segStart = 0;
     let segEnd = 0;
+
+    let busyCount = 0;
+    let busyJob = false;
+
+    const setUiDisabled = (on) => {
+      document.querySelectorAll('button, input, select, textarea').forEach((el) => {
+        if (el.closest('#busy')) return;
+        if (on) {
+          if (el.dataset.prevDisabled === undefined) el.dataset.prevDisabled = el.disabled ? '1' : '0';
+          el.disabled = true;
+          return;
+        }
+        if (el.dataset.prevDisabled !== undefined) {
+          el.disabled = (el.dataset.prevDisabled === '1');
+          delete el.dataset.prevDisabled;
+        }
+      });
+    };
+
+    const setBusyText = (title, msg) => {
+      const t = $('busyTitle');
+      const m = $('busyMsg');
+      if (t && title) t.textContent = title;
+      if (m && msg !== undefined && msg !== null) m.textContent = String(msg);
+    };
+
+    const updateBusyState = () => {
+      const on = (busyCount > 0) || !!busyJob;
+      const el = $('busy');
+      if (!el) return;
+      if (on) el.classList.add('on');
+      else el.classList.remove('on');
+      setUiDisabled(on);
+    };
+
+    const beginBusy = (title, msg) => {
+      busyCount += 1;
+      setBusyText(title || 'Loading', msg ?? 'Mohon tunggu...');
+      updateBusyState();
+    };
+
+    const endBusy = () => {
+      busyCount = Math.max(0, busyCount - 1);
+      updateBusyState();
+    };
+
+    const runWithBusy = async (title, msg, fn) => {
+      beginBusy(title, msg);
+      try {
+        return await fn();
+      } finally {
+        endBusy();
+      }
+    };
+
+    const setBusyJob = (on, title, msg) => {
+      busyJob = !!on;
+      if (busyJob) setBusyText(title || 'Memproses...', msg ?? 'Mohon tunggu...');
+      updateBusyState();
+    };
 
     const setOpenFolderVisible = (on) => {
       const btn = $('openFolder');
@@ -661,48 +740,50 @@ HTML = r"""
     const openSegPreview = async (idx) => {
       const s = segments[idx];
       if (!s) return;
-      if (!currentVideoId) {
-        try {
-          await loadInfo();
-        } catch (e) {
-          alert(e.message);
-          return;
-        }
-      }
-
-      const start = Math.max(0, parseInt(s.start || 0, 10));
-      const end = Math.max(0, parseInt(s.end || 0, 10));
-      if (end <= start) {
-        alert('Segmen tidak valid (end <= start).');
-        return;
-      }
-
-      activeSegIdx = idx;
-      renderSegs();
-
-      $('segEnabled').checked = !!s.enabled;
-      $('segMeta').textContent = `Segmen #${idx+1} • ${fmt(start)} - ${fmt(end)} • Dur ${fmt(end-start)} • Score ${s.score === undefined ? '-' : Number(s.score).toFixed(2)}`;
-
-      segStart = start;
-      segEnd = end;
-      $('segEditStart').value = fmt(start);
-      $('segEditEnd').value = fmt(end);
-
-      destroySegPlayer();
-      openSegModal();
-
-      await ensureYTApi();
-      segPlayer = new YT.Player('segPlayer', {
-        height: '100%',
-        width: '100%',
-        videoId: currentVideoId,
-        playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1, start: start, end: end },
-        events: {
-          onReady: (e) => {
-            try { e.target.setPlaybackQuality('large'); } catch {}
-            try { e.target.seekTo(start, true); } catch {}
+      await runWithBusy('Menyiapkan preview...', 'Memuat player segmen...', async () => {
+        if (!currentVideoId) {
+          try {
+            await loadInfo();
+          } catch (e) {
+            alert(e.message);
+            return;
           }
         }
+
+        const start = Math.max(0, parseInt(s.start || 0, 10));
+        const end = Math.max(0, parseInt(s.end || 0, 10));
+        if (end <= start) {
+          alert('Segmen tidak valid (end <= start).');
+          return;
+        }
+
+        activeSegIdx = idx;
+        renderSegs();
+
+        $('segEnabled').checked = !!s.enabled;
+        $('segMeta').textContent = `Segmen #${idx+1} • ${fmt(start)} - ${fmt(end)} • Dur ${fmt(end-start)} • Score ${s.score === undefined ? '-' : Number(s.score).toFixed(2)}`;
+
+        segStart = start;
+        segEnd = end;
+        $('segEditStart').value = fmt(start);
+        $('segEditEnd').value = fmt(end);
+
+        destroySegPlayer();
+        openSegModal();
+
+        await ensureYTApi();
+        segPlayer = new YT.Player('segPlayer', {
+          height: '100%',
+          width: '100%',
+          videoId: currentVideoId,
+          playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1, start: start, end: end },
+          events: {
+            onReady: (e) => {
+              try { e.target.setPlaybackQuality('large'); } catch {}
+              try { e.target.seekTo(start, true); } catch {}
+            }
+          }
+        });
       });
     };
 
@@ -882,6 +963,11 @@ HTML = r"""
         if (!data.ok) return;
         const isRunning = data.running && !data.done;
         setProgress(data.percent, data.status, data.eta, isRunning);
+        if (busyJob && isRunning) {
+          const pct = Math.max(0, Math.min(100, Number(data.percent || 0)));
+          const st = (data.status || '').trim();
+          setBusyText('Sedang memproses...', (st ? st + ' • ' : '') + pct.toFixed(0) + '%');
+        }
         let logText = data.logs || '';
         if (data.error) {
           logText += '\\n\\n❌ ERROR: ' + data.error;
@@ -892,6 +978,7 @@ HTML = r"""
           pollTimer = null;
           const canOpen = !data.error && data.success_count > 0 && !!data.output_dir;
           setOpenFolderVisible(canOpen);
+          setBusyJob(false);
           if (data.error) {
             alert('❌ Proses gagal!\\n\\n' + data.error);
           } else if (data.success_count > 0) {
@@ -918,9 +1005,10 @@ HTML = r"""
       setOpenFolderVisible(false);
       setLog('🚀 Memulai proses...');
       setProgress(0, 'Memulai...', '', true);
+      setBusyJob(true, 'Memproses clip...', 'Memulai...');
       const res = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Gagal start job');
+      if (!data.ok) { setBusyJob(false); throw new Error(data.error || 'Gagal start job'); }
       jobId = data.job_id;
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(poll, 700);
@@ -940,12 +1028,14 @@ HTML = r"""
     };
 
     const loadInfo = async () => {
-      const url = validateUrl();
-      const res = await fetch('/api/video_info', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Gagal load info');
-      applyVideoInfo(data);
-      persistCfg();
+      return await runWithBusy('Memuat info video...', 'Mengambil durasi & video ID...', async () => {
+        const url = validateUrl();
+        const res = await fetch('/api/video_info', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal load info');
+        applyVideoInfo(data);
+        persistCfg();
+      });
     };
 
     const waitMainPlayer = async () => {
@@ -1033,7 +1123,7 @@ HTML = r"""
     $('loadHeatmap').addEventListener('click', async () => {
       setHeatmapLoading(true);
       try {
-        await loadHeatmap();
+        await runWithBusy('Memuat heatmap...', 'Mengambil Most Replayed / backup AI...', loadHeatmap);
       } catch(e){
         alert(e.message);
       } finally {
@@ -1053,8 +1143,10 @@ HTML = r"""
     });
     $('addSeg').addEventListener('click', async () => {
       try {
-        if (!durationSec) await loadInfo();
-        addSeg();
+        await runWithBusy('Menambah segmen...', 'Menyiapkan data video...', async () => {
+          if (!durationSec) await loadInfo();
+          addSeg();
+        });
       } catch(e){
         alert(e.message);
       }
@@ -1073,9 +1165,11 @@ HTML = r"""
     $('openFolder').addEventListener('click', async () => {
       if (!jobId) return;
       try {
-        const res = await fetch('/api/open_output/' + jobId, { method:'POST' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Gagal membuka folder output.');
+        await runWithBusy('Membuka folder...', 'Menyiapkan folder output...', async () => {
+          const res = await fetch('/api/open_output/' + jobId, { method:'POST' });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error || 'Gagal membuka folder output.');
+        });
       } catch (e) {
         alert(e.message);
       }
@@ -1221,6 +1315,7 @@ HTML = r"""
       $('url').value = '';
       syncRangeFill($('timeline'));
       renderSegs();
+      updateBusyState();
     })();
   </script>
 </body>
