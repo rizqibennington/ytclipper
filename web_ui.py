@@ -82,11 +82,25 @@ HTML = r"""
     #log { margin-top: 10px; }
     #log:empty { display: none; }
     pre { white-space: pre-wrap; word-wrap: break-word; background: #0b111a; border: 1px solid #1f2a3a; border-radius: 12px; padding: 10px; height: 220px; overflow: auto; }
+    .summary { background: #0b111a; border: 1px solid #1f2a3a; border-radius: 12px; padding: 12px; max-height: 320px; overflow: auto; }
+    .summaryTop { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .summaryKv { background: #0f1622; border: 1px solid #1f2a3a; border-radius: 12px; padding: 10px; min-width: 0; }
+    .summaryK { color: #a7b7c9; font-size: 12px; margin: 0 0 6px 0; }
+    .summaryV { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-word; }
+    .summaryH { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px 0; }
+    .summaryH .t { font-size: 13px; color: #cfe0f1; font-weight: 650; }
+    .summaryH .s { color: #a7b7c9; font-size: 12px; }
+    .summaryTable { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #1f2a3a; border-radius: 12px; overflow: hidden; }
+    .summaryTable th, .summaryTable td { padding: 8px 8px; border-bottom: 1px solid #1f2a3a; }
+    .summaryTable th { text-align: left; color: #b8c6d6; font-weight: 600; background: rgba(255,255,255,0.03); }
+    .summaryTable tr:last-child td { border-bottom: 0; }
+    .summaryFoot { margin-top: 10px; display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; color: #a7b7c9; font-size: 12px; }
     .modal { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; padding: 16px; background: rgba(0,0,0,0.65); overflow: auto; }
     .modal.on { display: flex; }
     .modal .box { width: min(980px, 100%); background: #111824; border: 1px solid #1f2a3a; border-radius: 14px; padding: 14px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
     .modal .box h3 { margin: 0 0 10px 0; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    @media (max-width: 720px) { .summaryTop { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .wrap { max-width: 100%; } }
   </style>
 </head>
@@ -339,7 +353,7 @@ HTML = r"""
   <div class="modal" id="modal">
     <div class="box">
       <h3>Konfirmasi</h3>
-      <pre id="summary" class="mono" style="height:260px"></pre>
+      <div id="summary" class="summary"></div>
       <div class="row">
         <button class="btn" id="closeModal">
           <span class="btnLabel">
@@ -448,6 +462,7 @@ HTML = r"""
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const DEFAULT_OUTDIR = {{ default_output_dir | tojson }};
     const fmt = (sec) => {
       sec = Math.max(0, Math.floor(sec||0));
       const h = Math.floor(sec/3600);
@@ -757,23 +772,88 @@ HTML = r"""
     const fillSummary = () => {
       const segs = validateSegments();
       const outMode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
-      const outDir = outMode === 'default' ? '{{ default_output_dir }}' : $('outDir').value.trim();
+      const outDir = outMode === 'default' ? DEFAULT_OUTDIR : $('outDir').value.trim();
       const crop = $('crop').value;
       const subOn = $('subOn').checked;
       const model = $('model').value;
       let totalSec = 0;
       for (const s of segs) totalSec += Math.max(0, (s.end|0)-(s.start|0));
       const estMB = (totalSec * 2600000 / 8) / (1024*1024);
-      const lines = [];
-      lines.push('Lokasi output: ' + outDir);
-      lines.push('Crop mode: ' + crop);
-      lines.push('Subtitle: ' + (subOn ? ('ON (Model: '+model+')') : 'OFF'));
-      lines.push('');
-      lines.push('Daftar klip:');
-      segs.forEach((s, i) => lines.push((i+1)+'. '+fmt(s.start)+' - '+fmt(s.end)));
-      lines.push('');
-      lines.push('Estimasi ukuran total (kasar): ' + estMB.toFixed(1) + ' MB');
-      $('summary').textContent = lines.join('\\n');
+      const root = $('summary');
+      while (root.firstChild) root.removeChild(root.firstChild);
+
+      const top = document.createElement('div');
+      top.className = 'summaryTop';
+
+      const mkKv = (k, v) => {
+        const box = document.createElement('div');
+        box.className = 'summaryKv';
+        const kk = document.createElement('div');
+        kk.className = 'summaryK';
+        kk.textContent = k;
+        const vv = document.createElement('div');
+        vv.className = 'summaryV';
+        vv.textContent = v;
+        box.appendChild(kk);
+        box.appendChild(vv);
+        return box;
+      };
+
+      top.appendChild(mkKv('Lokasi output', outDir || '-'));
+      top.appendChild(mkKv('Crop mode', crop || '-'));
+      top.appendChild(mkKv('Subtitle', subOn ? ('ON • Model: ' + model) : 'OFF'));
+      top.appendChild(mkKv('Total', segs.length + ' klip • ' + fmt(totalSec)));
+      root.appendChild(top);
+
+      const h = document.createElement('div');
+      h.className = 'summaryH';
+      const ht = document.createElement('div');
+      ht.className = 't';
+      ht.textContent = 'Daftar klip';
+      const hs = document.createElement('div');
+      hs.className = 's';
+      hs.textContent = 'Format: Start–End (Durasi)';
+      h.appendChild(ht);
+      h.appendChild(hs);
+      root.appendChild(h);
+
+      const table = document.createElement('table');
+      table.className = 'summaryTable';
+      const thead = document.createElement('thead');
+      const hr = document.createElement('tr');
+      ['#', 'Start', 'End', 'Durasi'].forEach((txt) => {
+        const th = document.createElement('th');
+        th.textContent = txt;
+        hr.appendChild(th);
+      });
+      thead.appendChild(hr);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      segs.forEach((s, i) => {
+        const tr = document.createElement('tr');
+        const dur = Math.max(0, (s.end|0)-(s.start|0));
+        const cells = [String(i + 1), fmt(s.start), fmt(s.end), fmt(dur)];
+        cells.forEach((txt) => {
+          const td = document.createElement('td');
+          td.textContent = txt;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      root.appendChild(table);
+
+      const foot = document.createElement('div');
+      foot.className = 'summaryFoot';
+      const left = document.createElement('div');
+      left.textContent = 'Estimasi ukuran total (kasar)';
+      const right = document.createElement('div');
+      right.className = 'summaryV';
+      right.textContent = estMB.toFixed(1) + ' MB';
+      foot.appendChild(left);
+      foot.appendChild(right);
+      root.appendChild(foot);
     };
 
     const setLog = (text) => {
