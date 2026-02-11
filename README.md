@@ -99,6 +99,15 @@ python run.py
 
 ---
 
+## Standar Durasi (Editorial)
+
+- Maksimal durasi per klip: **02:59 (179 detik)**
+- Klip **tidak boleh** mencapai 03:00 (180 detik) atau lebih
+- UI bakal kasih meter durasi realtime + peringatan saat mendekati limit
+- Kalau ada input/segmen kepanjangan, sistem auto-trim end ke detik ke-179 dari start (dan dicatat di log job)
+
+---
+
 ## Troubleshooting
 
 ### FFmpeg tidak ketemu

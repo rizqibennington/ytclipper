@@ -109,6 +109,11 @@ HTML = r"""
     .busyMsg { margin-top: 2px; font-size: 12px; color: #b8c6d6; }
     .spinner.big { width: 34px; height: 34px; border-width: 3px; display: inline-block; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .durMeter { --pct: 0%; margin-top: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid #1f2a3a; background: linear-gradient(90deg, rgba(72,208,255,0.20) 0%, rgba(72,208,255,0.20) var(--pct), #0b111a var(--pct), #0b111a 100%); color: #a7b7c9; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .durMeter.near { border-color: rgba(255, 202, 66, 0.7); color: #ffd27a; }
+    .durMeter.warn { border-color: rgba(255, 140, 66, 0.8); color: #ffb27a; }
+    .durMeter.max { border-color: rgba(225,74,82,0.9); color: #ff9aa0; animation: durPulse 1s ease-in-out infinite; }
+    @keyframes durPulse { 0% { box-shadow: 0 0 0 0 rgba(225,74,82,0.0); } 50% { box-shadow: 0 0 0 6px rgba(225,74,82,0.12); } 100% { box-shadow: 0 0 0 0 rgba(225,74,82,0.0); } }
     @media (max-width: 720px) { .summaryTop { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .wrap { max-width: 100%; } }
   </style>
@@ -289,12 +294,13 @@ HTML = r"""
           </svg>
           Tambah Segmen Manual
         </h2>
-        <div class="muted" style="margin:-6px 0 12px 0">Kalau mau klip bagian tertentu, isi start/end lalu Tambah. Segmen akan muncul di tabel Segmen.</div>
+        <div class="muted" style="margin:-6px 0 12px 0">Kalau mau klip bagian tertentu, isi start/end lalu Tambah. Batas per klip: 02:59 (179 detik).</div>
         <label title="Rentang waktu klip manual (detik).">Start / End (manual)</label>
         <div class="row">
           <input id="sStart" type="number" min="0" step="1" title="Start detik." />
           <input id="sEnd" type="number" min="0" step="1" title="End detik." />
         </div>
+        <div class="durMeter" id="durMeterManual" aria-live="polite"></div>
         <div style="height:10px"></div>
         <div class="row">
           <button class="btn" id="addSeg" title="Tambah segmen manual dari input start/end.">
@@ -340,7 +346,7 @@ HTML = r"""
               <span>Review & Proses</span>
             </span>
           </button>
-          <button class="btn" id="openFolder" title="Buka folder output (hasil clip)." style="display:none">
+          <button class="btn" id="openFolder" type="button" title="Buka folder output (hasil clip)." style="display:none">
             <span class="btnLabel">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
@@ -392,6 +398,7 @@ HTML = r"""
     <div class="box">
       <h3>Preview Heatmap</h3>
       <div class="muted" id="segMeta"></div>
+      <div class="muted">Batas per klip: 02:59 (179 detik).</div>
       <div style="height:10px"></div>
       <div class="player">
         <div id="segPlayer"></div>
@@ -416,6 +423,7 @@ HTML = r"""
           <input id="segEditEnd" type="text" placeholder="MM:SS" />
         </div>
       </div>
+      <div class="durMeter" id="durMeterSeg" aria-live="polite"></div>
       <div style="height:10px"></div>
       <div class="row">
         <button class="btn" id="segSetStartNow" title="Set start = posisi player saat ini.">
@@ -616,6 +624,9 @@ HTML = r"""
       if (txt) txt.textContent = on ? 'Loading...' : 'Load Heatmap';
     };
 
+    const qs = new URLSearchParams(window.location.search || '');
+    const heatmapDebug = (qs.get('heatmap_debug') === '1') || (localStorage.getItem('ytclipper_heatmap_debug') === '1');
+
     const cfgKey = 'ytclipper_web_cfg_v1';
     const loadLocalCfg = () => {
       try { return JSON.parse(localStorage.getItem(cfgKey) || '{}') || {}; } catch { return {}; }
@@ -815,6 +826,7 @@ HTML = r"""
         segEnd = end;
         $('segEditStart').value = fmt(start);
         $('segEditEnd').value = fmt(end);
+        setDurMeter($('durMeterSeg'), start, end);
 
         destroySegPlayer();
         openSegModal();
@@ -862,8 +874,15 @@ HTML = r"""
         return;
       }
 
+      const capped = enforceMaxDur(start, end, 'edit segmen');
+      const end2 = capped.changed ? capped.end : end;
+      if (capped.changed) {
+        $('segEditEnd').value = fmt(end2);
+        alert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.');
+      }
+
       s.start = start;
-      s.end = end;
+      s.end = end2;
       segments[activeSegIdx] = s;
       renderSegs();
       persistCfg();
@@ -894,6 +913,7 @@ HTML = r"""
       for (const s of segs) {
         if (s.start < 0 || s.end < 0) throw new Error('Durasi tidak boleh negatif.');
         if (s.end <= s.start) throw new Error('End harus lebih besar dari Start.');
+        if ((s.end - s.start) > MAX_CLIP_S) throw new Error('Durasi klip maksimal 02:59 (179 detik).');
       }
       return segs;
     };
@@ -988,6 +1008,93 @@ HTML = r"""
     const setLog = (text) => {
       $('log').textContent = text || '';
       $('log').scrollTop = $('log').scrollHeight;
+    };
+
+    const appendLog = (line) => {
+      if (!line) return;
+      const el = $('log');
+      if (!el) return;
+      el.textContent = (el.textContent ? (el.textContent + '\n') : '') + String(line);
+      el.scrollTop = el.scrollHeight;
+    };
+
+    const MAX_CLIP_S = 179;
+    const DUR_NEAR_S = 170;
+    const DUR_WARN_S = 175;
+    const DUR_MAX_S = 179;
+
+    let _beepCtx = null;
+    let _lastBeepTs = 0;
+    const beep = async () => {
+      const now = Date.now();
+      if (now - _lastBeepTs < 1200) return;
+      _lastBeepTs = now;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!_beepCtx) _beepCtx = new AC();
+        try { if (_beepCtx.state === 'suspended') await _beepCtx.resume(); } catch {}
+
+        const o = _beepCtx.createOscillator();
+        const g = _beepCtx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 880;
+        g.gain.value = 0.0001;
+        o.connect(g);
+        g.connect(_beepCtx.destination);
+
+        const t0 = _beepCtx.currentTime;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+        o.start(t0);
+        o.stop(t0 + 0.14);
+      } catch {}
+    };
+
+    const setDurMeter = (el, start, end) => {
+      if (!el) return;
+      el.classList.remove('near', 'warn', 'max');
+      if (start === null || end === null || end <= start) {
+        el.style.setProperty('--pct', '0%');
+        el.textContent = 'Durasi: - / 02:59';
+        return;
+      }
+      const dur = Math.max(0, Math.floor(end - start));
+      const pct = Math.max(0, Math.min(100, (dur / MAX_CLIP_S) * 100));
+      el.style.setProperty('--pct', pct.toFixed(1) + '%');
+      el.textContent = `Durasi: ${fmt(dur)} / 02:59`;
+      if (dur >= DUR_MAX_S) el.classList.add('max');
+      else if (dur >= DUR_WARN_S) el.classList.add('warn');
+      else if (dur >= DUR_NEAR_S) el.classList.add('near');
+    };
+
+    const enforceMaxDur = (start, end, label) => {
+      if (start === null || end === null) return { start, end, changed: false };
+      if (end <= start) return { start, end, changed: false };
+      const dur = end - start;
+      if (dur <= MAX_CLIP_S) return { start, end, changed: false };
+      const newEnd = start + MAX_CLIP_S;
+      appendLog(`[durasi] ${label || 'segmen'} melebihi 02:59, auto-trim end ke ${fmt(newEnd)}`);
+      beep();
+      return { start, end: newEnd, changed: true };
+    };
+
+    const enforceAllSegments = (label) => {
+      let changed = 0;
+      for (const s of (segments || [])) {
+        if (!s || !s.enabled) continue;
+        const st = Number(s.start);
+        const en = Number(s.end);
+        if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
+        if (en <= st) continue;
+        const capped = enforceMaxDur(st, en, label || 'segmen');
+        if (capped.changed) {
+          s.end = capped.end;
+          changed++;
+        }
+      }
+      return changed;
     };
 
     const setProgress = (p, status, eta, isActive = true) => {
@@ -1097,9 +1204,13 @@ HTML = r"""
     const loadHeatmap = async () => {
       const url = validateUrl();
 
+      const tAll0 = performance.now();
+
+      const tInfo0 = performance.now();
       const infoRes = await fetch('/api/video_info', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
       const infoData = await infoRes.json();
       if (!infoData.ok) throw new Error(infoData.error || 'Gagal load info');
+      const tInfoMs = performance.now() - tInfo0;
 
       const nextVideoId = infoData.video_id;
       const shouldSwitchVideo = (!currentVideoId) || (String(currentVideoId) !== String(nextVideoId));
@@ -1113,14 +1224,25 @@ HTML = r"""
 
       let heatmapErr = null;
       try {
-        const res = await fetch('/api/heatmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, duration_seconds: infoData.duration_seconds}) });
+        const tHm0 = performance.now();
+        const res = await fetch('/api/heatmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, duration_seconds: infoData.duration_seconds, debug: heatmapDebug}) });
         const data = await res.json();
+        const tHmMs = performance.now() - tHm0;
         if (!data.ok) throw new Error(data.error || 'Gagal load heatmap');
         segments = data.segments || [];
+        enforceAllSegments('heatmap');
         if (!segments.length) throw new Error('Heatmap kosong: video ini tidak punya Most Replayed, atau parsing gagal.');
         segments.sort((a, b) => ((Number(b.score ?? 0) - Number(a.score ?? 0)) || ((a.start|0) - (b.start|0)) || ((a.end|0) - (b.end|0))));
         activeSegIdx = null;
+        const tRender0 = performance.now();
         renderSegs();
+        const tRenderMs = performance.now() - tRender0;
+        if (heatmapDebug) {
+          appendLog(`[heatmap] video_info ${tInfoMs.toFixed(0)}ms`);
+          appendLog(`[heatmap] /api/heatmap ${tHmMs.toFixed(0)}ms • render ${tRenderMs.toFixed(0)}ms • seg ${segments.length}`);
+          if (data._meta) appendLog(`[heatmap] meta ${JSON.stringify(data._meta)}`);
+          appendLog(`[heatmap] total ${(performance.now() - tAll0).toFixed(0)}ms`);
+        }
         return;
       } catch (e) {
         heatmapErr = e;
@@ -1134,6 +1256,7 @@ HTML = r"""
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || 'Gagal generate AI segments');
         segments = data.segments || [];
+        enforceAllSegments('AI');
         if (!segments.length) throw new Error('AI segments kosong: transcript tidak cukup jelas, atau analisis gagal.');
         segments.sort((a, b) => ((Number(b.score ?? 0) - Number(a.score ?? 0)) || ((a.start|0) - (b.start|0)) || ((a.end|0) - (b.end|0))));
         activeSegIdx = null;
@@ -1152,7 +1275,15 @@ HTML = r"""
       if (s < 0 || e < 0) throw new Error('Durasi tidak boleh negatif.');
       if (e <= s) throw new Error('End harus lebih besar dari Start.');
       if (durationSec > 0 && e > durationSec) throw new Error('End melebihi durasi video.');
-      segments.push({ enabled:true, start:s, end:e });
+
+      const capped = enforceMaxDur(s, e, 'manual');
+      const end2 = capped.changed ? capped.end : e;
+      if (capped.changed) {
+        $('sEnd').value = String(end2);
+        alert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.');
+      }
+
+      segments.push({ enabled:true, start:s, end:end2 });
       segments.sort((a,b) => (a.start-b.start) || (a.end-b.end));
       renderSegs();
     };
@@ -1167,6 +1298,57 @@ HTML = r"""
     $('subOn').addEventListener('change', () => { syncSub(); persistCfg(); });
     $('model').addEventListener('change', persistCfg);
     $('previewSecs').addEventListener('change', persistCfg);
+
+    const updateManualDur = (clamp = false) => {
+      const st = parseInt(($('sStart').value || '').trim(), 10);
+      const en = parseInt(($('sEnd').value || '').trim(), 10);
+      const start = Number.isFinite(st) ? st : null;
+      const end0 = Number.isFinite(en) ? en : null;
+      let end = end0;
+      if (clamp && start !== null && end !== null && end > start) {
+        const capped = enforceMaxDur(start, end, 'manual');
+        if (capped.changed) {
+          end = capped.end;
+          $('sEnd').value = String(end);
+        }
+      }
+      setDurMeter($('durMeterManual'), start, end);
+      if (start !== null && end !== null && end > start) {
+        const dur = Math.floor(end - start);
+        if (dur >= DUR_WARN_S && dur < DUR_MAX_S) beep();
+      }
+    };
+
+    const updateSegEditDur = (clamp = false) => {
+      const start0 = parseTime($('segEditStart').value);
+      const end0 = parseTime($('segEditEnd').value);
+      let start = start0;
+      let end = end0;
+      if (clamp && start !== null && end !== null && end > start) {
+        const capped = enforceMaxDur(start, end, 'edit segmen');
+        if (capped.changed) {
+          end = capped.end;
+          $('segEditEnd').value = fmt(end);
+        }
+      }
+      setDurMeter($('durMeterSeg'), start, end);
+      if (start !== null && end !== null && end > start) {
+        const dur = Math.floor(end - start);
+        if (dur >= DUR_WARN_S && dur < DUR_MAX_S) beep();
+      }
+    };
+
+    $('sStart').addEventListener('input', () => updateManualDur(true));
+    $('sEnd').addEventListener('input', () => updateManualDur(true));
+    $('sStart').addEventListener('change', () => updateManualDur(true));
+    $('sEnd').addEventListener('change', () => updateManualDur(true));
+
+    $('segEditStart').addEventListener('input', () => updateSegEditDur(true));
+    $('segEditEnd').addEventListener('input', () => updateSegEditDur(true));
+    $('segEditStart').addEventListener('change', () => updateSegEditDur(true));
+    $('segEditEnd').addEventListener('change', () => updateSegEditDur(true));
+
+    updateManualDur(false);
 
     $('openYT').addEventListener('click', () => window.open($('url').value.trim() || 'https://youtube.com', '_blank'));
     $('loadHeatmap').addEventListener('click', async () => {
@@ -1200,7 +1382,7 @@ HTML = r"""
         alert(e.message);
       }
     });
-    $('clearSeg').addEventListener('click', () => { segments = []; renderSegs(); });
+    $('clearSeg').addEventListener('click', () => { segments = []; activeSegIdx = null; renderSegs(); persistCfg(); });
     $('review').addEventListener('click', () => { try { fillSummary(); openModal(); } catch(e){ alert(e.message); } });
     $('closeModal').addEventListener('click', closeModal);
     $('go').addEventListener('click', async () => {
@@ -1211,16 +1393,35 @@ HTML = r"""
         alert(e.message);
       }
     });
-    $('openFolder').addEventListener('click', async () => {
-      if (!jobId) return;
+    $('openFolder').addEventListener('click', async (ev) => {
+      try { ev.preventDefault(); } catch {}
+      if (!jobId) {
+        const msg = 'Job belum ada. Tombol ini aktif setelah proses selesai.';
+        appendLog('[openFolder] ' + msg);
+        try { console.warn(msg); } catch {}
+        alert(msg);
+        return;
+      }
       try {
         await runWithBusy('Membuka folder...', 'Menyiapkan folder output...', async () => {
-          const res = await fetch('/api/open_output/' + jobId, { method:'POST' });
-          const data = await res.json();
-          if (!data.ok) throw new Error(data.error || 'Gagal membuka folder output.');
+          appendLog('[openFolder] Request /api/open_output/' + jobId);
+          const res = await fetch('/api/open_output/' + jobId, { method:'POST', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            const t = await res.text().catch(() => '');
+            throw new Error('Response tidak valid (bukan JSON). ' + (t ? ('\n' + t.slice(0, 200)) : ''));
+          }
+          if (!data || !data.ok) throw new Error((data && data.error) ? data.error : 'Gagal membuka folder output.');
+          appendLog('[openFolder] OK ' + (data.output_dir ? ('→ ' + data.output_dir) : ''));
+          try { console.log('openFolder OK', data); } catch {}
         });
       } catch (e) {
-        alert(e.message);
+        const msg = (e && e.message) ? e.message : String(e);
+        appendLog('[openFolder] ERROR ' + msg);
+        try { console.error(e); } catch {}
+        alert(msg);
       }
     });
 

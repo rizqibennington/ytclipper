@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from config_store import default_output_dir
-from core_constants import BOTTOM_HEIGHT, PADDING, TOP_HEIGHT
+from core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
 from ffmpeg_deps import cek_dependensi
 from subtitle_ai import generate_subtitle, set_whisper_model
 from yt_info import extract_video_id, get_duration
@@ -68,6 +68,10 @@ def proses_satu_clip(
     else:
         start = max(0, start_original)
         end = min(end_original, total_duration)
+
+    max_end = start + float(MAX_DURATION)
+    if end > max_end:
+        end = max_end
 
     duration = end - start
     print(f"\n{'='*40}")
@@ -376,6 +380,9 @@ def proses_dengan_segmen(
             raise ValueError("Durasi tidak boleh negatif.")
         if end <= start:
             raise ValueError("End harus lebih besar dari Start.")
+        max_end = start + float(MAX_DURATION)
+        if end > max_end:
+            end = max_end
         cleaned.append({"start": start, "end": end, "enabled": True})
 
     success = 0

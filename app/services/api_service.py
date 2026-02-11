@@ -1,19 +1,71 @@
 import uuid
 
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import re
+import threading
+import time
 
 from config_store import default_output_dir, load_config, save_config
 from clipper import estimate_total_size_bytes
 from core_constants import MAX_DURATION
 from ffmpeg_deps import cek_dependensi
 from heatmap import ambil_most_replayed
-from jobs import create_job, get_job, start_job
+from jobs import append_job_log, create_job, get_job, start_job
 from subtitle_ai import get_whisper_model, set_whisper_model, transcribe_timestamped_segments
 from yt_info import extract_video_id, get_duration
+
+
+_HEATMAP_CACHE = {}
+_HEATMAP_CACHE_LOCK = threading.Lock()
+
+
+def _heatmap_log_path():
+    p = os.environ.get("YTCLIPPER_HEATMAP_LOG")
+    if p:
+        return str(p)
+    return os.path.join(os.path.expanduser("~"), ".ytclipper_heatmap.jsonl")
+
+
+def _append_heatmap_log(rec):
+    try:
+        path = _heatmap_log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
+
+
+def _heatmap_cache_key(video_id, duration_seconds):
+    try:
+        dur = int(duration_seconds) if duration_seconds is not None else None
+    except Exception:
+        dur = None
+    return (str(video_id), dur)
+
+
+def _heatmap_cache_get(key, ttl_s):
+    now = time.time()
+    with _HEATMAP_CACHE_LOCK:
+        it = _HEATMAP_CACHE.get(key)
+        if not it:
+            return None
+        age = now - float(it.get("ts", 0) or 0)
+        if age < 0 or age > ttl_s:
+            _HEATMAP_CACHE.pop(key, None)
+            return None
+        out = dict(it)
+        out["age_s"] = age
+        return out
+
+
+def _heatmap_cache_set(key, value):
+    with _HEATMAP_CACHE_LOCK:
+        _HEATMAP_CACHE[key] = value
 
 
 def _get_url(data):
@@ -39,7 +91,30 @@ def get_heatmap_segments(data):
         raise ValueError("Link YouTube tidak valid.")
 
     duration_seconds = (data or {}).get("duration_seconds")
-    heatmap = ambil_most_replayed(video_id, duration_seconds=duration_seconds)
+    debug = bool((data or {}).get("debug")) or (str(os.environ.get("YTCLIPPER_HEATMAP_DEBUG", "") or "").strip() == "1")
+    ttl_s = int(os.environ.get("YTCLIPPER_HEATMAP_CACHE_TTL_S", "900") or "900")
+    slow_ms = int(os.environ.get("YTCLIPPER_HEATMAP_SLOW_MS", "2000") or "2000")
+    cache_key = _heatmap_cache_key(video_id, duration_seconds)
+
+    t0 = time.perf_counter()
+    cached = _heatmap_cache_get(cache_key, ttl_s=ttl_s)
+    if cached:
+        resp = {"ok": True, "segments": cached.get("segments") or []}
+        if debug:
+            resp["_meta"] = {"cache": "hit", "cache_age_s": round(float(cached.get("age_s") or 0), 3), "video_id": str(video_id)}
+        return resp
+
+    diag = {} if debug else None
+    try:
+        heatmap = ambil_most_replayed(video_id, duration_seconds=duration_seconds, diag=diag)
+    except Exception as e:
+        dt_ms = int((time.perf_counter() - t0) * 1000)
+        rec = {"event": "heatmap.error", "video_id": str(video_id), "ms": dt_ms, "err": str(e)}
+        if diag:
+            rec["diag"] = diag
+        _append_heatmap_log(rec)
+        raise
+
     segs = []
     for it in heatmap:
         s = int(float(it.get("start", 0)))
@@ -48,6 +123,28 @@ def get_heatmap_segments(data):
             continue
         segs.append({"enabled": True, "start": s, "end": s + d, "score": float(it.get("score", 0))})
     segs.sort(key=lambda x: (-(x.get("score") or 0.0), x.get("start") or 0, x.get("end") or 0))
+
+    dt_ms = int((time.perf_counter() - t0) * 1000)
+    if segs:
+        _heatmap_cache_set(cache_key, {"ts": time.time(), "segments": segs})
+
+    if debug or dt_ms >= slow_ms:
+        try:
+            payload_bytes = len(json.dumps(segs, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        except Exception:
+            payload_bytes = None
+        rec = {
+            "event": "heatmap.done",
+            "video_id": str(video_id),
+            "ms": dt_ms,
+            "segments": int(len(segs)),
+            "duration_seconds": duration_seconds,
+            "payload_bytes": payload_bytes,
+        }
+        if diag:
+            rec["diag"] = diag
+        _append_heatmap_log(rec)
+
     if not segs:
         raise ValueError(
             "Tidak ada data auto-segmen untuk video ini.\n"
@@ -56,7 +153,10 @@ def get_heatmap_segments(data):
             "- Kalau sering gagal di banyak video: YouTube mungkin lagi ubah format halaman (coba beberapa menit lagi).\n"
             "Kamu tetap bisa bikin segmen manual (Start/End) lalu klik Add."
         )
-    return {"ok": True, "segments": segs}
+    out = {"ok": True, "segments": segs}
+    if debug:
+        out["_meta"] = {"cache": "miss", "video_id": str(video_id), "ms": dt_ms, "diag": diag or {}}
+    return out
 
 
 def _download_audio_to(video_id, out_dir):
@@ -209,7 +309,7 @@ def _build_ai_segments(transcript_segments, duration_seconds, limit=10):
     max_len = float(MAX_DURATION)
     step = 10.0
     min_len = 20.0
-    duration_options = [20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0]
+    duration_options = [20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 179.0]
 
     keywords = {
         "intinya",
@@ -308,6 +408,9 @@ def _build_ai_segments(transcript_segments, duration_seconds, limit=10):
     for p in picked:
         s = int(max(0, round(p["start"])))
         e = int(max(s + 1, round(p["end"])))
+        max_e = s + int(MAX_DURATION)
+        if e > max_e:
+            e = max(s + 1, max_e)
         out.append({"enabled": True, "start": s, "end": e, "score": float(p["score"] / max_score)})
     out.sort(key=lambda x: (-(x.get("score") or 0.0), x.get("start") or 0, x.get("end") or 0))
     return out
@@ -362,14 +465,29 @@ def _parse_segments(segments):
         raise ValueError("Minimal 1 segmen harus aktif.")
 
     total_sec = 0
+    warnings = []
     for s in enabled_segments:
         if s["start"] < 0 or s["end"] < 0:
             raise ValueError("Durasi tidak boleh negatif.")
         if s["end"] <= s["start"]:
             raise ValueError("End harus lebih besar dari Start.")
-        total_sec += int(max(0, s["end"] - s["start"]))
+        dur = float(s["end"] - s["start"])
+        if dur > float(MAX_DURATION):
+            new_end = float(s["start"]) + float(MAX_DURATION)
+            warnings.append(
+                {
+                    "type": "trim",
+                    "start": float(s["start"]),
+                    "end_before": float(s["end"]),
+                    "end_after": float(new_end),
+                    "limit_s": int(MAX_DURATION),
+                }
+            )
+            s["end"] = new_end
+            dur = float(s["end"] - s["start"])
+        total_sec += int(max(0, dur))
 
-    return cleaned, enabled_segments, total_sec
+    return cleaned, enabled_segments, total_sec, warnings
 
 
 def start_clip_job(data):
@@ -390,11 +508,22 @@ def start_clip_job(data):
     else:
         output_dir = str(output_dir).strip()
 
-    cleaned, enabled_segments, total_sec = _parse_segments(data.get("segments", []))
+    cleaned, enabled_segments, total_sec, warnings = _parse_segments(data.get("segments", []))
     est_bytes = estimate_total_size_bytes(total_sec)
 
     job_id = uuid.uuid4().hex
     create_job(job_id, output_dir=output_dir)
+
+    if warnings:
+        append_job_log(job_id, f"\n⏱️ Standar durasi: maksimal 02:59 (179 detik) per klip.\n")
+        for w in warnings[:80]:
+            try:
+                append_job_log(
+                    job_id,
+                    f"⚠️ Durasi segmen melebihi batas, auto-trim end {w.get('end_before')} → {w.get('end_after')} (limit {w.get('limit_s')}s)\n",
+                )
+            except Exception:
+                continue
 
     payload = {
         "url": url,
@@ -427,12 +556,21 @@ def _open_folder(path):
         raise ValueError("Folder output tidak ditemukan di komputer ini.")
 
     if sys.platform.startswith("win"):
-        os.startfile(path)
-        return
+        try:
+            os.startfile(path)
+            return "os.startfile"
+        except Exception:
+            pass
+        try:
+            subprocess.Popen(["explorer", path])
+            return "explorer"
+        except Exception as e:
+            raise ValueError("Gagal membuka folder di Windows: " + str(e))
     if sys.platform == "darwin":
         subprocess.Popen(["open", path])
-        return
+        return "open"
     subprocess.Popen(["xdg-open", path])
+    return "xdg-open"
 
 
 def open_output_folder(job_id):
@@ -444,5 +582,12 @@ def open_output_folder(job_id):
     if not output_dir:
         raise ValueError("Output folder tidak tersedia.")
 
-    _open_folder(str(output_dir))
-    return {"ok": True}
+    output_dir = str(output_dir)
+    append_job_log(job_id, f"\n📁 Membuka folder output: {output_dir}\n")
+    try:
+        method = _open_folder(output_dir)
+        append_job_log(job_id, f"✅ Folder dibuka ({method}).\n")
+        return {"ok": True, "output_dir": output_dir, "method": method}
+    except Exception as e:
+        append_job_log(job_id, f"❌ Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
+        raise

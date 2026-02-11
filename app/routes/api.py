@@ -19,6 +19,8 @@ def api_get_config():
         cfg["preview_seconds"] = 30
     if "subtitle_position" not in cfg:
         cfg["subtitle_position"] = "middle"
+    if "deps_verbose" not in cfg:
+        cfg["deps_verbose"] = False
     return jsonify(cfg)
 
 
@@ -26,7 +28,16 @@ def api_get_config():
 def api_set_config():
     data = request.get_json(silent=True) or {}
     cfg = load_config()
-    for k in ("output_mode", "output_dir", "crop_mode", "use_subtitle", "whisper_model", "subtitle_position", "preview_seconds"):
+    for k in (
+        "output_mode",
+        "output_dir",
+        "crop_mode",
+        "use_subtitle",
+        "whisper_model",
+        "subtitle_position",
+        "preview_seconds",
+        "deps_verbose",
+    ):
         if k in data:
             cfg[k] = data[k]
     save_config(cfg)
