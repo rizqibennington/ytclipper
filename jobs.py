@@ -140,6 +140,7 @@ def run_job(job_id, payload):
                 output_dir=payload.get("output_dir"),
                 apply_padding=payload.get("apply_padding", False),
                 event_cb=event_cb,
+                gemini_api_key=payload.get("gemini_api_key"),
             )
             update_job(
                 job_id,

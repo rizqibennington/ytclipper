@@ -61,3 +61,7 @@ ffprobe.exe
 # Test files
 test.py
 debug_*.py
+
+# Environment Variables
+.env
+.env.local

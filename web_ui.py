@@ -255,6 +255,9 @@ HTML = r"""
           <input id="outDir" type="text" placeholder="C:\\path\\to\\folder" title="Folder output di mesin ini." style="flex:1;min-width:200px;" />
         </div>
         <div style="height:10px"></div>
+        <label title="Masukkan Gemini API Key untuk fitur saran Judul & Caption (Opsional).">Gemini API Key (AI Title & Caption)</label>
+        <input id="geminiKey" type="text" placeholder="AIzaSy..." title="API Key dari Google AI Studio." />
+        <div style="height:10px"></div>
         <div class="row" style="align-items:flex-end;">
           <div style="flex:0 0 160px;">
             <label title="default=middle crop, split untuk facecam bawah.">Crop Mode</label>
@@ -644,6 +647,7 @@ HTML = r"""
       if (cfg.whisper_model) $('model').value = cfg.whisper_model;
       if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
       if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
+      if (cfg.gemini_api_key) $('geminiKey').value = cfg.gemini_api_key;
       syncOutMode();
       syncSub();
       updateCropPreview();
@@ -657,7 +661,8 @@ HTML = r"""
       use_subtitle: $('subOn').checked,
       whisper_model: $('model').value,
       subtitle_position: $('subPos').value,
-      preview_seconds: parseInt($('previewSecs').value || '30', 10)
+      preview_seconds: parseInt($('previewSecs').value || '30', 10),
+      gemini_api_key: $('geminiKey').value.trim()
     });
 
     const persistCfg = async () => {
@@ -1127,6 +1132,35 @@ HTML = r"""
         if (data.error) {
           logText += '\\n\\n❌ ERROR: ' + data.error;
         }
+
+        // Parse AI JSON Logs
+        if (logText && logText.includes('__AI_JSON__')) {
+            const parts = logText.split('__AI_JSON__');
+            let cleanLog = parts[0];
+            for (let i = 1; i < parts.length; i++) {
+                try {
+                    const lineEnd = parts[i].indexOf('\\n');
+                    const jsonStr = lineEnd === -1 ? parts[i] : parts[i].substring(0, lineEnd);
+                    const rest = lineEnd === -1 ? '' : parts[i].substring(lineEnd);
+                    
+                    const meta = JSON.parse(jsonStr);
+                    const titles = (meta.titles || []).map(t => '• ' + t).join('\\n');
+                    const tags = (meta.hashtags || []).join(' ');
+                    
+                    cleanLog += '\\n\\n✨ AI SUGGESTION:\\n' +
+                                '----------------------------------------\\n' +
+                                'JUDUL:\\n' + titles + '\\n\\n' +
+                                'CAPTION:\\n' + (meta.caption || '-') + '\\n\\n' +
+                                'HASHTAGS:\\n' + tags + '\\n' +
+                                '----------------------------------------\\n';
+                    cleanLog += rest;
+                } catch (e) {
+                    cleanLog += parts[i];
+                }
+            }
+            logText = cleanLog;
+        }
+
         setLog(logText);
         if (data.done) {
           clearInterval(pollTimer);
@@ -1155,7 +1189,8 @@ HTML = r"""
         use_subtitle: $('subOn').checked,
         whisper_model: $('model').value,
         subtitle_position: $('subPos').value,
-        output_dir: outDir
+        output_dir: outDir,
+        gemini_api_key: $('geminiKey').value.trim()
       };
       setOpenFolderVisible(false);
       setLog('🚀 Memulai proses...');
@@ -1298,6 +1333,7 @@ HTML = r"""
     $('subOn').addEventListener('change', () => { syncSub(); persistCfg(); });
     $('model').addEventListener('change', persistCfg);
     $('previewSecs').addEventListener('change', persistCfg);
+    $('geminiKey').addEventListener('change', persistCfg);
 
     const updateManualDur = (clamp = false) => {
       const st = parseInt(($('sStart').value || '').trim(), 10);

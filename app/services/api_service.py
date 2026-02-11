@@ -17,6 +17,7 @@ from heatmap import ambil_most_replayed
 from jobs import append_job_log, create_job, get_job, start_job
 from subtitle_ai import get_whisper_model, set_whisper_model, transcribe_timestamped_segments
 from yt_info import extract_video_id, get_duration
+from app.services.gemini_service import generate_clip_metadata
 
 
 _HEATMAP_CACHE = {}
@@ -525,6 +526,12 @@ def start_clip_job(data):
             except Exception:
                 continue
 
+    # Cek Gemini Key
+    gemini_api_key = data.get("gemini_api_key")
+    if not gemini_api_key:
+        cfg_tmp = load_config()
+        gemini_api_key = cfg_tmp.get("gemini_api_key")
+
     payload = {
         "url": url,
         "segments": cleaned,
@@ -535,6 +542,7 @@ def start_clip_job(data):
         "output_dir": output_dir,
         "apply_padding": False,
         "total_clips": len(enabled_segments),
+        "gemini_api_key": gemini_api_key,
     }
 
     start_job(job_id, payload)
@@ -589,5 +597,26 @@ def open_output_folder(job_id):
         append_job_log(job_id, f"✅ Folder dibuka ({method}).\n")
         return {"ok": True, "output_dir": output_dir, "method": method}
     except Exception as e:
-        append_job_log(job_id, f"❌ Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
+        append_job_log(job_id, f"??? Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
         raise
+
+
+def generate_ai_suggestions(data):
+    """
+    Menghasilkan saran judul dan caption menggunakan Gemini.
+    """
+    text = (data or {}).get("text", "")
+    if not text:
+        raise ValueError("Teks transkrip kosong.")
+
+    # Coba ambil API Key dari data (kalo dikirim langsung) atau dari config
+    api_key = (data or {}).get("gemini_api_key")
+    if not api_key:
+        cfg = load_config()
+        api_key = cfg.get("gemini_api_key")
+    
+    if not api_key:
+        raise ValueError("Gemini API Key belum diset. Masukkan di Settings atau kirim langsung.")
+
+    result = generate_clip_metadata(text, api_key)
+    return {"ok": True, "data": result}

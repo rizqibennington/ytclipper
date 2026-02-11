@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 import uuid
+import json
+import tempfile
 from datetime import datetime
 
 from config_store import default_output_dir
@@ -9,6 +11,7 @@ from core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
 from ffmpeg_deps import cek_dependensi
 from subtitle_ai import generate_subtitle, set_whisper_model
 from yt_info import extract_video_id, get_duration
+from app.services.gemini_service import generate_clip_metadata
 
 
 def unique_path(folder, stem, ext):
@@ -53,8 +56,9 @@ def proses_satu_clip(
     use_subtitle=False,
     subtitle_position="middle",
     output_dir=None,
-    apply_padding=True,
+    apply_padding=False,
     event_cb=None,
+    gemini_api_key=None,
 ):
     start_original = float(item.get("start", 0))
     if "end" in item:
@@ -316,6 +320,53 @@ def proses_satu_clip(
             except Exception:
                 return False
 
+        if gemini_api_key:
+            try:
+                print(f"✨ [AI] Menggenerate judul & caption untuk Clip #{index}...")
+                transcript_text = ""
+                
+                sub_source = subtitle_file if (use_subtitle and os.path.exists(subtitle_file)) else None
+                temp_sub = None
+                
+                if not sub_source:
+                    temp_sub = unique_path(tempfile.gettempdir(), f"sub_temp_{uuid.uuid4().hex}", ".srt")
+                    # Gunakan output_file yang sudah final
+                    if generate_subtitle(output_file, temp_sub):
+                        sub_source = temp_sub
+                
+                if sub_source and os.path.exists(sub_source):
+                    with open(sub_source, 'r', encoding='utf-8') as f:
+                        lines = f.read().splitlines()
+                        text_parts = []
+                        for line in lines:
+                            l = line.strip()
+                            if "-->" in l or l.isdigit() or not l:
+                                continue
+                            text_parts.append(l)
+                        transcript_text = " ".join(text_parts)
+                
+                if temp_sub and os.path.exists(temp_sub):
+                    try: os.remove(temp_sub)
+                    except: pass
+
+                if transcript_text.strip():
+                    meta = generate_clip_metadata(transcript_text, gemini_api_key)
+                    meta_file = os.path.splitext(output_file)[0] + "_ai.txt"
+                    with open(meta_file, "w", encoding="utf-8") as f:
+                        f.write(f"JUDUL:\n")
+                        for t in meta.get("titles", []):
+                            f.write(f"- {t}\n")
+                        f.write(f"\nCAPTION:\n{meta.get('caption', '')}\n")
+                        f.write(f"\nHASHTAGS:\n{' '.join(meta.get('hashtags', []))}\n")
+                    
+                    print(f"✅ [AI] Saran judul & caption tersimpan di {os.path.basename(meta_file)}")
+                    # Kirim sinyal JSON ke log biar bisa diparsing UI (future proof)
+                    print(f"__AI_JSON__{json.dumps(meta)}")
+                else:
+                     print(f"⚠️ [AI Warning] Tidak ada suara/transkrip terdeteksi untuk AI.")
+            except Exception as e:
+                print(f"⚠️ [AI Error] {str(e)}")
+
         print(f"✅ Clip #{index} selesai → {os.path.basename(output_file)}")
         return True
     except subprocess.CalledProcessError:
@@ -348,6 +399,7 @@ def proses_dengan_segmen(
     output_dir=None,
     apply_padding=False,
     event_cb=None,
+    gemini_api_key=None,
 ):
     if whisper_model:
         set_whisper_model(whisper_model)
@@ -399,6 +451,7 @@ def proses_dengan_segmen(
             output_dir=output_dir,
             apply_padding=apply_padding,
             event_cb=event_cb,
+            gemini_api_key=gemini_api_key,
         )
         if ok:
             success += 1

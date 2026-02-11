@@ -11,14 +11,22 @@ def config_path():
 
 
 def load_config():
+    data = {}
     try:
         with open(config_path(), "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, dict):
-                return data
+            if not isinstance(data, dict):
+                data = {}
     except Exception:
-        return {}
-    return {}
+        data = {}
+
+    # Default Gemini API Key (Priority: Config > Env > None)
+    if "gemini_api_key" not in data or not data["gemini_api_key"]:
+        env_key = os.environ.get("GEMINI_API_KEY")
+        if env_key:
+            data["gemini_api_key"] = env_key
+    
+    return data
 
 
 def save_config(data):

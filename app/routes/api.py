@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from config_store import default_output_dir, load_config, save_config
 from jobs import get_job
-from app.services.api_service import get_ai_segments, get_heatmap_segments, get_video_info, open_output_folder, start_clip_job
+from app.services.api_service import generate_ai_suggestions, get_ai_segments, get_heatmap_segments, get_video_info, open_output_folder, start_clip_job
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -37,6 +37,7 @@ def api_set_config():
         "subtitle_position",
         "preview_seconds",
         "deps_verbose",
+        "gemini_api_key",
     ):
         if k in data:
             cfg[k] = data[k]
@@ -82,6 +83,17 @@ def api_start():
     data = request.get_json(silent=True) or {}
     try:
         return jsonify(start_clip_job(data))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@api_bp.post("/gemini_suggestions")
+def api_gemini_suggestions():
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify(generate_ai_suggestions(data))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)})
     except Exception as e:
