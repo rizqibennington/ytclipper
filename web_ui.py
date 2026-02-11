@@ -41,8 +41,10 @@ HTML = r"""
     input[type="range"]::-moz-range-track { height: 14px; border-radius: 999px; background: #0b111a; border: 1px solid #1f2a3a; }
     input[type="range"]::-moz-range-progress { height: 14px; border-radius: 999px; background: #2b5cff; }
     input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 999px; background: #e8edf2; border: 2px solid #2b5cff; box-shadow: 0 0 0 4px rgba(43,92,255,0.18); }
-    .player { width: 100%; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; border: 1px solid #1f2a3a; background: #0b111a; }
+    .player { width: 100%; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; border: 1px solid #1f2a3a; background: #0b111a; position: relative; }
     .player iframe { width: 100%; height: 100%; border: 0; }
+    .cropOverlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity 120ms ease; }
+    .cropOverlay.on { opacity: 1; }
     .seglist { width: 100%; border-collapse: collapse; font-size: 13px; }
     .seglist th, .seglist td { padding: 8px 6px; border-bottom: 1px solid #1f2a3a; }
     .seglist th { text-align: left; color: #b8c6d6; font-weight: 600; }
@@ -145,6 +147,7 @@ HTML = r"""
         <div style="height:12px"></div>
         <div class="player">
           <div id="player"></div>
+          <svg id="mainCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
         <div style="height:10px"></div>
         <div class="row">
@@ -248,6 +251,7 @@ HTML = r"""
               <option value="split_left">split_left</option>
               <option value="split_right">split_right</option>
             </select>
+            <label style="display:flex;gap:8px;align-items:center;margin-top:10px;white-space:nowrap;" title="Tampilkan overlay perkiraan area crop di preview."><input id="cropPrev" type="checkbox" checked /> Preview crop</label>
           </div>
           <div style="flex:1;min-width:280px;">
             <label title="Aktifkan subtitle AI (butuh download model).">Subtitle</label>
@@ -384,6 +388,7 @@ HTML = r"""
       <div style="height:10px"></div>
       <div class="player">
         <div id="segPlayer"></div>
+        <svg id="segCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
       </div>
       <div style="height:10px"></div>
       <div class="row">
@@ -544,18 +549,21 @@ HTML = r"""
       if (cfg.output_mode) document.querySelectorAll('input[name="outMode"]').forEach(r => r.checked = (r.value === cfg.output_mode));
       if (cfg.output_dir) $('outDir').value = cfg.output_dir;
       if (cfg.crop_mode) $('crop').value = cfg.crop_mode;
+      if (cfg.crop_preview !== undefined && $('cropPrev')) $('cropPrev').checked = !!cfg.crop_preview;
       if (cfg.use_subtitle !== undefined) $('subOn').checked = !!cfg.use_subtitle;
       if (cfg.whisper_model) $('model').value = cfg.whisper_model;
       if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
       if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
       syncOutMode();
       syncSub();
+      updateCropPreview();
     };
 
     const collectCfg = () => ({
       output_mode: document.querySelector('input[name="outMode"]:checked')?.value || 'default',
       output_dir: $('outDir').value.trim(),
       crop_mode: $('crop').value,
+      crop_preview: $('cropPrev') ? $('cropPrev').checked : true,
       use_subtitle: $('subOn').checked,
       whisper_model: $('model').value,
       subtitle_position: $('subPos').value,
@@ -579,6 +587,46 @@ HTML = r"""
     const syncSub = () => {
       $('model').disabled = !$('subOn').checked;
       $('subPos').disabled = !$('subOn').checked;
+    };
+
+    const updateCropPreview = () => {
+      const mode = ($('crop')?.value || 'default').trim();
+      const on = $('cropPrev') ? !!$('cropPrev').checked : true;
+
+      const els = [$('mainCropOverlay'), $('segCropOverlay')].filter(Boolean);
+      els.forEach((el) => {
+        el.classList.toggle('on', on);
+        if (!on) return;
+        const w = 31.640625;
+        const xC = (100 - w) / 2;
+        const topH = 75;
+        const bottomY = topH;
+        const bottomH = 25;
+        const bottomX = mode === 'split_right' ? (100 - w) : 0;
+        const shade = 'rgba(0,0,0,0.45)';
+        const stroke = 'rgba(72,208,255,0.92)';
+        const stroke2 = 'rgba(72,208,255,0.55)';
+        const sw = 0.85;
+
+        let holes = '';
+        let frames = '';
+        if (mode === 'split_left' || mode === 'split_right') {
+          holes = `M${xC} 0H${xC + w}V${topH}H${xC}Z M${bottomX} ${bottomY}H${bottomX + w}V100H${bottomX}Z`;
+          frames = `
+            <rect x="${xC}" y="0" width="${w}" height="${topH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
+            <rect x="${bottomX}" y="${bottomY}" width="${w}" height="${bottomH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
+            <line x1="0" y1="${bottomY}" x2="100" y2="${bottomY}" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="3 2" />
+          `;
+        } else {
+          holes = `M${xC} 0H${xC + w}V100H${xC}Z`;
+          frames = `<rect x="${xC}" y="0" width="${w}" height="100" fill="none" stroke="${stroke}" stroke-width="${sw}" />`;
+        }
+
+        el.innerHTML = `
+          <path d="M0 0H100V100H0Z ${holes}" fill="${shade}" fill-rule="evenodd" />
+          ${frames}
+        `;
+      });
     };
 
     const ensureYTApi = (() => {
@@ -1024,7 +1072,8 @@ HTML = r"""
 
     document.querySelectorAll('input[name="outMode"]').forEach(r => r.addEventListener('change', () => { syncOutMode(); persistCfg(); }));
     $('outDir').addEventListener('change', persistCfg);
-    $('crop').addEventListener('change', persistCfg);
+    $('crop').addEventListener('change', () => { updateCropPreview(); persistCfg(); });
+    if ($('cropPrev')) $('cropPrev').addEventListener('change', () => { updateCropPreview(); persistCfg(); });
     $('subOn').addEventListener('change', () => { syncSub(); persistCfg(); });
     $('model').addEventListener('change', persistCfg);
     $('previewSecs').addEventListener('change', persistCfg);
