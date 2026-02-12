@@ -18,6 +18,8 @@ def get_config():
         cfg["preview_seconds"] = 30
     if "subtitle_position" not in cfg:
         cfg["subtitle_position"] = "middle"
+    if "subtitle_language" not in cfg:
+        cfg["subtitle_language"] = "id"
     if "deps_verbose" not in cfg:
         cfg["deps_verbose"] = False
 

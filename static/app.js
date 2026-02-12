@@ -153,6 +153,7 @@ const applyCfg = (cfg) => {
   if (cfg.crop_preview !== undefined && $('cropPrev')) $('cropPrev').checked = !!cfg.crop_preview;
   if (cfg.use_subtitle !== undefined) $('subOn').checked = !!cfg.use_subtitle;
   if (cfg.whisper_model) $('model').value = cfg.whisper_model;
+  if (cfg.subtitle_language && $('subLang')) $('subLang').value = cfg.subtitle_language;
   if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
   if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
   const hint = $('geminiKeyHint');
@@ -174,6 +175,7 @@ const collectCfgLocal = () => ({
   crop_preview: $('cropPrev') ? $('cropPrev').checked : true,
   use_subtitle: $('subOn').checked,
   whisper_model: $('model').value,
+  subtitle_language: $('subLang') ? $('subLang').value : 'id',
   subtitle_position: $('subPos').value,
   preview_seconds: parseInt($('previewSecs').value || '30', 10),
 });
@@ -200,6 +202,7 @@ const syncOutMode = () => {
 
 const syncSub = () => {
   $('model').disabled = !$('subOn').checked;
+  if ($('subLang')) $('subLang').disabled = !$('subOn').checked;
   $('subPos').disabled = !$('subOn').checked;
 };
 
@@ -224,7 +227,10 @@ const updateCropPreview = () => {
 
     let holes = '';
     let frames = '';
-    if (mode === 'split_left' || mode === 'split_right') {
+    if (mode === 'fit') {
+      holes = 'M0 0H100V100H0Z';
+      frames = `<rect x="0" y="0" width="100" height="100" fill="none" stroke="${stroke}" stroke-width="${sw}" />`;
+    } else if (mode === 'split_left' || mode === 'split_right') {
       holes = `M${xC} 0H${xC + w}V${topH}H${xC}Z M${bottomX} ${bottomY}H${bottomX + w}V100H${bottomX}Z`;
       frames = `
             <rect x="${xC}" y="0" width="${w}" height="${topH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
@@ -734,6 +740,7 @@ const startJob = async () => {
     crop_mode: $('crop').value,
     use_subtitle: $('subOn').checked,
     whisper_model: $('model').value,
+    subtitle_language: $('subLang') ? $('subLang').value : 'id',
     subtitle_position: $('subPos').value,
     output_dir: outDir,
     gemini_api_key: $('geminiKey').value.trim(),
@@ -843,7 +850,7 @@ const loadHeatmap = async () => {
     const res = await fetch('/api/ai_segments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, whisper_model: $('model').value, language: 'id' }),
+      body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, whisper_model: $('model').value, language: ($('subLang') ? $('subLang').value : 'id') }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Gagal generate AI segments');

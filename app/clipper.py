@@ -54,6 +54,7 @@ def proses_satu_clip(
     total_duration,
     crop_mode="default",
     use_subtitle=False,
+    subtitle_language=None,
     subtitle_position="middle",
     output_dir=None,
     apply_padding=False,
@@ -174,6 +175,29 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
+        elif crop_mode == "fit":
+            cmd_crop = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                temp_file,
+                "-vf",
+                "scale=720:1280:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "26",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                cropped_file,
+            ]
         elif crop_mode == "split_left":
             vf = (
                 f"scale='max(720,iw*1280/ih)':1280[scaled];"
@@ -208,7 +232,7 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
-        else:
+        elif crop_mode == "split_right":
             vf = (
                 f"scale='max(720,iw*1280/ih)':1280[scaled];"
                 f"[scaled]split=2[s1][s2];"
@@ -242,6 +266,8 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
+        else:
+            raise ValueError(f"crop_mode tidak dikenal: {crop_mode}")
 
         if event_cb:
             event_cb({"stage": "clip", "clip_index": index})
@@ -255,7 +281,7 @@ def proses_satu_clip(
         if use_subtitle:
             if event_cb:
                 event_cb({"stage": "subtitle", "clip_index": index})
-            ok = generate_subtitle(cropped_file, subtitle_file)
+            ok = generate_subtitle(cropped_file, subtitle_file, language=subtitle_language)
             if ok:
                 if event_cb:
                     event_cb({"stage": "subtitle_burn", "clip_index": index})
@@ -395,6 +421,7 @@ def proses_dengan_segmen(
     crop_mode="default",
     use_subtitle=False,
     whisper_model=None,
+    subtitle_language=None,
     subtitle_position="middle",
     output_dir=None,
     apply_padding=False,
@@ -447,6 +474,7 @@ def proses_dengan_segmen(
             total_duration=total_duration,
             crop_mode=crop_mode,
             use_subtitle=use_subtitle,
+            subtitle_language=subtitle_language,
             subtitle_position=subtitle_position,
             output_dir=output_dir,
             apply_padding=apply_padding,
@@ -460,4 +488,3 @@ def proses_dengan_segmen(
         raise RuntimeError("Semua segmen gagal diproses.")
 
     return {"success_count": success, "output_dir": output_dir}
-

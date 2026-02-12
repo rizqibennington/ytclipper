@@ -21,9 +21,10 @@ class AiSegmentsResponse(OkResponse):
 class StartJobRequest(BaseModel):
     url: str = Field(min_length=1)
     segments: list[Segment]
-    crop_mode: Literal["default", "split_left", "split_right"] = "default"
+    crop_mode: Literal["default", "fit", "split_left", "split_right"] = "default"
     use_subtitle: bool = False
     whisper_model: str | None = None
+    subtitle_language: str | None = None
     subtitle_position: Literal["bottom", "middle", "top"] = "middle"
     output_dir: str | None = None
     gemini_api_key: str | None = None
@@ -45,4 +46,3 @@ class ClipMetadata(BaseModel):
 
 class GeminiSuggestionResponse(OkResponse):
     data: ClipMetadata
-

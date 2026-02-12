@@ -153,9 +153,10 @@
         <div style="height:10px"></div>
         <div class="row" style="align-items:flex-end;">
           <div style="flex:0 0 160px;">
-            <label title="default=middle crop, split untuk facecam bawah.">Crop Mode</label>
+            <label title="default=middle crop, fit=tanpa crop (pad), split untuk facecam bawah.">Crop Mode</label>
             <select id="crop">
               <option value="default">default</option>
+              <option value="fit">fit (no crop)</option>
               <option value="split_left">split_left</option>
               <option value="split_right">split_right</option>
             </select>
@@ -171,6 +172,11 @@
                 <option selected>small</option>
                 <option>medium</option>
                 <option>large-v3</option>
+              </select>
+              <select id="subLang" title="Bahasa subtitle: auto deteksi atau dipaksa." style="flex:0 0 110px;">
+                <option value="auto">Auto</option>
+                <option value="id" selected>ID</option>
+                <option value="en">EN</option>
               </select>
               <select id="subPos" title="Posisi subtitle: bawah / tengah / atas." style="flex:0 0 90px;">
                 <option value="bottom">Bawah</option>

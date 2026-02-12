@@ -9,6 +9,7 @@ class ConfigResponse(BaseModel):
     crop_mode: str | None = None
     use_subtitle: bool | None = None
     whisper_model: str | None = None
+    subtitle_language: str | None = None
     subtitle_position: str | None = None
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
@@ -24,8 +25,8 @@ class ConfigUpdateRequest(BaseModel):
     crop_preview: bool | None = None
     use_subtitle: bool | None = None
     whisper_model: str | None = None
+    subtitle_language: str | None = None
     subtitle_position: str | None = None
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
     gemini_api_key: str | None = None
-

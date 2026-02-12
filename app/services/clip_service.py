@@ -72,6 +72,16 @@ def start_clip_job(data):
     use_subtitle = bool(data.get("use_subtitle", False))
     whisper_model = str(data.get("whisper_model", get_whisper_model())).strip() or get_whisper_model()
 
+    subtitle_language = data.get("subtitle_language")
+    if subtitle_language is None or str(subtitle_language).strip() == "":
+        try:
+            subtitle_language = str((load_config() or {}).get("subtitle_language") or "id")
+        except Exception:
+            subtitle_language = "id"
+    subtitle_language = str(subtitle_language).strip().lower() or "id"
+    if subtitle_language not in ("auto", "id", "en"):
+        subtitle_language = "id"
+
     subtitle_position = str(data.get("subtitle_position", "middle")).strip().lower() or "middle"
     if subtitle_position not in ("bottom", "middle", "top"):
         subtitle_position = "middle"
@@ -107,9 +117,10 @@ def start_clip_job(data):
     payload = {
         "url": url,
         "segments": cleaned,
-        "crop_mode": crop_mode if crop_mode in ("default", "split_left", "split_right") else "default",
+        "crop_mode": crop_mode if crop_mode in ("default", "fit", "split_left", "split_right") else "default",
         "use_subtitle": use_subtitle,
         "whisper_model": whisper_model,
+        "subtitle_language": subtitle_language,
         "subtitle_position": subtitle_position,
         "output_dir": output_dir,
         "apply_padding": False,
@@ -125,6 +136,7 @@ def start_clip_job(data):
     cfg["crop_mode"] = payload["crop_mode"]
     cfg["use_subtitle"] = use_subtitle
     cfg["whisper_model"] = whisper_model
+    cfg["subtitle_language"] = subtitle_language
     cfg["subtitle_position"] = subtitle_position
     save_config(cfg)
 
@@ -171,4 +183,3 @@ def open_output_folder(job_id):
     except Exception as e:
         append_job_log(job_id, f"??? Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
         raise
-
