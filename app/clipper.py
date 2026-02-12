@@ -6,11 +6,11 @@ import json
 import tempfile
 from datetime import datetime
 
-from config_store import default_output_dir
-from core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
-from ffmpeg_deps import cek_dependensi
-from subtitle_ai import generate_subtitle, set_whisper_model
-from yt_info import extract_video_id, get_duration
+from app.config_store import default_output_dir
+from app.core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
+from app.ffmpeg_deps import cek_dependensi
+from app.subtitle_ai import generate_subtitle, set_whisper_model
+from app.yt_info import extract_video_id, get_duration
 from app.services.gemini_service import generate_clip_metadata
 
 
@@ -324,18 +324,17 @@ def proses_satu_clip(
             try:
                 print(f"✨ [AI] Menggenerate judul & caption untuk Clip #{index}...")
                 transcript_text = ""
-                
+
                 sub_source = subtitle_file if (use_subtitle and os.path.exists(subtitle_file)) else None
                 temp_sub = None
-                
+
                 if not sub_source:
                     temp_sub = unique_path(tempfile.gettempdir(), f"sub_temp_{uuid.uuid4().hex}", ".srt")
-                    # Gunakan output_file yang sudah final
                     if generate_subtitle(output_file, temp_sub):
                         sub_source = temp_sub
-                
+
                 if sub_source and os.path.exists(sub_source):
-                    with open(sub_source, 'r', encoding='utf-8') as f:
+                    with open(sub_source, "r", encoding="utf-8") as f:
                         lines = f.read().splitlines()
                         text_parts = []
                         for line in lines:
@@ -344,26 +343,27 @@ def proses_satu_clip(
                                 continue
                             text_parts.append(l)
                         transcript_text = " ".join(text_parts)
-                
+
                 if temp_sub and os.path.exists(temp_sub):
-                    try: os.remove(temp_sub)
-                    except: pass
+                    try:
+                        os.remove(temp_sub)
+                    except Exception:
+                        pass
 
                 if transcript_text.strip():
                     meta = generate_clip_metadata(transcript_text, gemini_api_key)
                     meta_file = os.path.splitext(output_file)[0] + "_ai.txt"
                     with open(meta_file, "w", encoding="utf-8") as f:
-                        f.write(f"JUDUL:\n")
+                        f.write("JUDUL:\n")
                         for t in meta.get("titles", []):
                             f.write(f"- {t}\n")
                         f.write(f"\nCAPTION:\n{meta.get('caption', '')}\n")
                         f.write(f"\nHASHTAGS:\n{' '.join(meta.get('hashtags', []))}\n")
-                    
+
                     print(f"✅ [AI] Saran judul & caption tersimpan di {os.path.basename(meta_file)}")
-                    # Kirim sinyal JSON ke log biar bisa diparsing UI (future proof)
                     print(f"__AI_JSON__{json.dumps(meta)}")
                 else:
-                     print(f"⚠️ [AI Warning] Tidak ada suara/transkrip terdeteksi untuk AI.")
+                    print("⚠️ [AI Warning] Tidak ada suara/transkrip terdeteksi untuk AI.")
             except Exception as e:
                 print(f"⚠️ [AI Error] {str(e)}")
 

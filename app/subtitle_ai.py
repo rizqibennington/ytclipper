@@ -1,4 +1,4 @@
-from core_constants import DEFAULT_WHISPER_MODEL
+from app.core_constants import DEFAULT_WHISPER_MODEL
 
 
 _WHISPER_MODEL = DEFAULT_WHISPER_MODEL

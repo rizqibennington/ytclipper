@@ -1,17 +1,15 @@
-import os
-from dotenv import load_dotenv
+import uvicorn
 
-# Load environment variables from .env file
-load_dotenv()
-
-from webapp import app
+from app.core.settings import get_settings
 
 
 if __name__ == "__main__":
-    debug = str(os.environ.get("FLASK_DEBUG", "1")).lower() not in ("0", "false", "no", "off")
-    host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "5000"))
+    settings = get_settings()
+    debug = bool(settings.debug)
+    host = str(settings.host)
+    port = int(settings.port)
     print(f"🚀 Server running at http://{host}:{port}")
-    print(f"🔥 Hot reload: {'ON' if debug else 'OFF'} (set FLASK_DEBUG=0 to disable)")
-    app.run(host=host, port=port, debug=debug, use_reloader=debug)
+    print(f"🔥 Hot reload: {'ON' if debug else 'OFF'} (set DEBUG=0 to disable)")
+    target = "app.main:app" if debug else "app.main:app"
+    uvicorn.run(target, host=host, port=port, reload=debug)
 

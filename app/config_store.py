@@ -20,12 +20,11 @@ def load_config():
     except Exception:
         data = {}
 
-    # Default Gemini API Key (Priority: Config > Env > None)
     if "gemini_api_key" not in data or not data["gemini_api_key"]:
         env_key = os.environ.get("GEMINI_API_KEY")
         if env_key:
             data["gemini_api_key"] = env_key
-    
+
     return data
 
 

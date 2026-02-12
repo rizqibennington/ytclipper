@@ -52,6 +52,7 @@ models/
 
 # Logs
 *.log
+logs/
 
 # FFmpeg binaries (auto-downloaded)
 bin/
@@ -65,3 +66,13 @@ debug_*.py
 # Environment Variables
 .env
 .env.local
+.env.*
+
+# Secrets & keys
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+*secret*
+*token*

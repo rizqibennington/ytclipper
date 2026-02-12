@@ -2,7 +2,7 @@ import contextlib
 import threading
 import time
 
-from clipper import format_hhmmss, proses_dengan_segmen
+from app.clipper import format_hhmmss, proses_dengan_segmen
 
 
 _JOBS_LOCK = threading.Lock()
@@ -166,3 +166,4 @@ def start_job(job_id, payload):
     t = threading.Thread(target=run_job, args=(job_id, payload), daemon=True)
     t.start()
     return t
+
