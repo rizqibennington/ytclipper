@@ -149,6 +149,11 @@
         <div style="height:10px"></div>
         <label title="Masukkan Gemini API Key untuk fitur saran Judul & Caption (Opsional).">Gemini API Key (AI Title & Caption)</label>
         <input id="geminiKey" type="password" placeholder="AIzaSy..." title="API Key dari Google AI Studio." autocomplete="off" />
+        <label style="display:block;margin-top:10px;" title="Kalau Tidak, aplikasi tidak akan generate saran judul/caption otomatis walaupun API key ada.">Generate saran AI (judul & caption)</label>
+        <select id="geminiOn" title="Aktifkan/nonaktifkan generate saran judul & caption." style="max-width:160px;">
+          <option value="no" selected>Tidak</option>
+          <option value="yes">Ya</option>
+        </select>
         <div id="geminiKeyHint" class="muted" style="margin-top:6px"></div>
         <div style="height:10px"></div>
         <div class="row" style="align-items:flex-end;">
@@ -397,6 +402,8 @@
   <script>
     window.__YTCLIPPER_DEFAULT_OUTDIR__ = "{{ default_output_dir }}";
   </script>
+  <script src="/static/seg_bulk_buttons_state.js"></script>
+  <script src="/static/open_folder_state.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

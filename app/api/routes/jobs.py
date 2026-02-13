@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.jobs import get_job
 from app.schemas import JobStatusResponse, OpenOutputResponse, StartJobRequest, StartJobResponse
-from app.services.clip_service import open_output_folder, start_clip_job
+from app.services.clip_service import inspect_output_dir, open_output_folder, start_clip_job
 
 
 router = APIRouter()
@@ -22,16 +22,29 @@ def status(job_id: str):
     if not job:
         return {"ok": False}
     logs = "".join(job.get("logs", [])[-2500:])
+
+    done = bool(job.get("done", False))
+    output_dir = job.get("output_dir")
+    out_ok = None
+    out_err = None
+    if done and output_dir:
+        inspected = inspect_output_dir(str(output_dir))
+        output_dir = inspected.get("path")
+        out_ok = bool(inspected.get("ok"))
+        out_err = inspected.get("error")
+
     return {
         "ok": True,
         "running": bool(job.get("running", False)),
-        "done": bool(job.get("done", False)),
+        "done": done,
         "percent": float(job.get("percent", 0.0)),
         "status": str(job.get("status", "")),
         "stage": str(job.get("stage", "")),
         "eta": str(job.get("eta", "")),
         "error": job.get("error"),
-        "output_dir": job.get("output_dir"),
+        "output_dir": output_dir,
+        "output_dir_ok": out_ok,
+        "output_dir_error": out_err,
         "success_count": int(job.get("success_count", 0)),
         "logs": logs,
     }
@@ -43,4 +56,3 @@ def open_output(job_id: str):
         return open_output_folder(job_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-

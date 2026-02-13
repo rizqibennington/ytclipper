@@ -27,6 +27,7 @@ class StartJobRequest(BaseModel):
     subtitle_language: str | None = None
     subtitle_position: Literal["bottom", "middle", "top"] = "middle"
     output_dir: str | None = None
+    use_gemini_suggestions: bool = False
     gemini_api_key: str | None = None
 
 

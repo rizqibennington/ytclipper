@@ -56,6 +56,98 @@ let segEnd = 0;
 let busyCount = 0;
 let busyJob = false;
 
+let lastJobStatus = null;
+
+let openFolderDesiredState = { visible: false, disabled: true, title: 'Buka folder output (hasil clip).' };
+
+const getOpenFolderButtonState = (jobStatus, uiBusy) => {
+  try {
+    const fn = window.__ytclipper_computeOpenFolderButtonState;
+    if (typeof fn === 'function') return fn(jobStatus, uiBusy);
+  } catch {}
+
+  const js = jobStatus || null;
+  const busy = !!uiBusy;
+
+  if (!js || !js.done) {
+    return { visible: false, disabled: true, title: 'Buka folder output (hasil clip).' };
+  }
+
+  if (busy) {
+    return { visible: true, disabled: true, title: 'Tunggu sebentar, masih ada proses yang berjalan.' };
+  }
+
+  if (js.error) {
+    return { visible: true, disabled: true, title: 'Proses gagal, tidak ada folder output yang bisa dibuka.' };
+  }
+
+  if (!js.success_count || js.success_count <= 0) {
+    return { visible: true, disabled: true, title: 'Tidak ada clip yang berhasil dibuat.' };
+  }
+
+  if (!js.output_dir) {
+    return { visible: true, disabled: true, title: 'Output folder tidak tersedia.' };
+  }
+
+  if (js.output_dir_ok === false) {
+    return { visible: true, disabled: true, title: js.output_dir_error ? String(js.output_dir_error) : 'Folder output tidak bisa diakses.' };
+  }
+
+  return { visible: true, disabled: false, title: 'Buka folder output (hasil clip).' };
+};
+
+const applyOpenFolderDesiredState = () => {
+  const btn = $('openFolder');
+  if (!btn) return;
+  btn.style.display = openFolderDesiredState.visible ? 'inline-flex' : 'none';
+  btn.disabled = !!openFolderDesiredState.disabled;
+  if (openFolderDesiredState.title) btn.title = String(openFolderDesiredState.title);
+};
+
+const setOpenFolderState = (patch) => {
+  openFolderDesiredState = { ...openFolderDesiredState, ...(patch || {}) };
+  applyOpenFolderDesiredState();
+};
+
+const syncOpenFolderButton = () => {
+  const uiBusy = busyCount > 0 || !!busyJob;
+  const state = getOpenFolderButtonState(lastJobStatus, uiBusy);
+  setOpenFolderState(state);
+  return state;
+};
+
+const getSegBulkButtonsState = (segs) => {
+  try {
+    const fn = window.__ytclipper_computeSegBulkButtonsState;
+    if (typeof fn === 'function') return fn(segs);
+  } catch {}
+
+  const list = Array.isArray(segs) ? segs : [];
+  const totalCount = list.length;
+  let enabledCount = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    const s = list[i];
+    if (s && s.enabled) enabledCount += 1;
+  }
+  return {
+    totalCount,
+    enabledCount,
+    selectAllDisabled: totalCount === 0 || enabledCount === totalCount,
+    deselectAllDisabled: totalCount === 0 || enabledCount === 0,
+  };
+};
+
+const syncSegBulkButtons = () => {
+  const state = getSegBulkButtonsState(segments);
+  const pickInfo = $('segPickInfo');
+  if (pickInfo) pickInfo.textContent = state.totalCount ? `Dipilih ${state.enabledCount} / ${state.totalCount}` : '';
+  const selAllBtn = $('segSelectAll');
+  const deselAllBtn = $('segDeselectAll');
+  if (selAllBtn) selAllBtn.disabled = state.selectAllDisabled;
+  if (deselAllBtn) deselAllBtn.disabled = state.deselectAllDisabled;
+  return state;
+};
+
 const setUiDisabled = (on) => {
   document.querySelectorAll('button, input, select, textarea').forEach((el) => {
     if (el.closest('#busy')) return;
@@ -85,6 +177,8 @@ const updateBusyState = () => {
   if (on) el.classList.add('on');
   else el.classList.remove('on');
   setUiDisabled(on);
+  if (!on) syncSegBulkButtons();
+  if (!on) applyOpenFolderDesiredState();
 };
 
 const beginBusy = (title, msg) => {
@@ -114,10 +208,7 @@ const setBusyJob = (on, title, msg) => {
 };
 
 const setOpenFolderVisible = (on) => {
-  const btn = $('openFolder');
-  if (!btn) return;
-  btn.style.display = on ? 'inline-flex' : 'none';
-  btn.disabled = !on;
+  setOpenFolderState({ visible: !!on, disabled: !on, title: 'Buka folder output (hasil clip).' });
 };
 
 const setHeatmapLoading = (on) => {
@@ -146,23 +237,50 @@ const saveLocalCfg = (obj) => {
   } catch {}
 };
 
+const isGeminiSuggestionsOn = () => {
+  const el = $('geminiOn');
+  if (!el) return false;
+  const v = String(el.value || '').trim().toLowerCase();
+  return v === 'yes' || v === 'ya' || v === 'on' || v === 'true' || v === '1';
+};
+
+let geminiKeyStoredOnServer = false;
+
+const syncGeminiHint = () => {
+  const hint = $('geminiKeyHint');
+  if (!hint) return;
+
+  const input = $('geminiKey');
+  const hasLocalKey = !!(input && String(input.value || '').trim());
+  if (hasLocalKey) {
+    hint.textContent = '';
+    return;
+  }
+
+  if (geminiKeyStoredOnServer) {
+    hint.textContent = !isGeminiSuggestionsOn() ? 'API key tersimpan, tapi generate AI sedang OFF.' : 'API key sudah tersimpan di server. Isi lagi hanya kalau mau ganti.';
+    return;
+  }
+
+  hint.textContent = '';
+};
+
 const applyCfg = (cfg) => {
   if (cfg.output_mode) document.querySelectorAll('input[name="outMode"]').forEach((r) => (r.checked = r.value === cfg.output_mode));
   if (cfg.output_dir) $('outDir').value = cfg.output_dir;
   if (cfg.crop_mode) $('crop').value = cfg.crop_mode;
   if (cfg.crop_preview !== undefined && $('cropPrev')) $('cropPrev').checked = !!cfg.crop_preview;
   if (cfg.use_subtitle !== undefined) $('subOn').checked = !!cfg.use_subtitle;
+  if (cfg.use_gemini_suggestions !== undefined && $('geminiOn')) $('geminiOn').value = cfg.use_gemini_suggestions ? 'yes' : 'no';
   if (cfg.whisper_model) $('model').value = cfg.whisper_model;
   if (cfg.subtitle_language && $('subLang')) $('subLang').value = cfg.subtitle_language;
   if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
   if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
-  const hint = $('geminiKeyHint');
+  geminiKeyStoredOnServer = !!cfg.has_gemini_key;
   if (cfg.has_gemini_key && $('geminiKey') && !$('geminiKey').value) {
     $('geminiKey').placeholder = 'Tersimpan di server';
-    if (hint) hint.textContent = 'API key sudah tersimpan di server. Isi lagi hanya kalau mau ganti.';
-  } else {
-    if (hint) hint.textContent = '';
   }
+  syncGeminiHint();
   syncOutMode();
   syncSub();
   updateCropPreview();
@@ -174,6 +292,7 @@ const collectCfgLocal = () => ({
   crop_mode: $('crop').value,
   crop_preview: $('cropPrev') ? $('cropPrev').checked : true,
   use_subtitle: $('subOn').checked,
+  use_gemini_suggestions: isGeminiSuggestionsOn(),
   whisper_model: $('model').value,
   subtitle_language: $('subLang') ? $('subLang').value : 'id',
   subtitle_position: $('subPos').value,
@@ -290,14 +409,7 @@ const renderSegs = () => {
         `;
     tbody.appendChild(tr);
   });
-  const enabledCount = segments.reduce((acc, s) => acc + (s && s.enabled ? 1 : 0), 0);
-  const totalCount = segments.length;
-  const pickInfo = $('segPickInfo');
-  if (pickInfo) pickInfo.textContent = totalCount ? `Dipilih ${enabledCount} / ${totalCount}` : '';
-  const selAllBtn = $('segSelectAll');
-  const deselAllBtn = $('segDeselectAll');
-  if (selAllBtn) selAllBtn.disabled = !totalCount || enabledCount === totalCount;
-  if (deselAllBtn) deselAllBtn.disabled = !totalCount || enabledCount === 0;
+  syncSegBulkButtons();
   if (activeSegIdx !== null && segments[activeSegIdx] && $('segEnabled')) {
     $('segEnabled').checked = !!segments[activeSegIdx].enabled;
   }
@@ -305,6 +417,7 @@ const renderSegs = () => {
     cb.addEventListener('change', (e) => {
       const i = parseInt(e.target.dataset.idx, 10);
       segments[i].enabled = !!e.target.checked;
+      syncSegBulkButtons();
       persistCfg();
     }),
   );
@@ -667,6 +780,7 @@ const poll = async () => {
     const res = await fetch('/api/status/' + jobId);
     const data = await res.json();
     if (!data.ok) return;
+    lastJobStatus = data;
     const isRunning = data.running && !data.done;
     setProgress(data.percent, data.status, data.eta, isRunning);
     if (busyJob && isRunning) {
@@ -714,12 +828,12 @@ const poll = async () => {
     }
 
     setLog(logText);
+    syncOpenFolderButton();
     if (data.done) {
       clearInterval(pollTimer);
       pollTimer = null;
-      const canOpen = !data.error && data.success_count > 0 && !!data.output_dir;
-      setOpenFolderVisible(canOpen);
       setBusyJob(false);
+      syncOpenFolderButton();
       if (data.error) {
         alert('❌ Proses gagal!\n\n' + data.error);
       } else if (data.success_count > 0) {
@@ -734,6 +848,7 @@ const startJob = async () => {
   const segs = validateSegments();
   const outMode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
   const outDir = outMode === 'default' ? null : validateOutDir();
+  const useGemini = isGeminiSuggestionsOn();
   const payload = {
     url,
     segments: segs,
@@ -743,9 +858,11 @@ const startJob = async () => {
     subtitle_language: $('subLang') ? $('subLang').value : 'id',
     subtitle_position: $('subPos').value,
     output_dir: outDir,
-    gemini_api_key: $('geminiKey').value.trim(),
+    use_gemini_suggestions: useGemini,
+    gemini_api_key: useGemini ? $('geminiKey').value.trim() : null,
   };
-  setOpenFolderVisible(false);
+  lastJobStatus = null;
+  setOpenFolderState({ visible: false, disabled: true, title: 'Tombol ini aktif setelah proses selesai.' });
   setLog('🚀 Memulai proses...');
   setProgress(0, 'Memulai...', '', true);
   setBusyJob(true, 'Memproses clip...', 'Memulai...');
@@ -913,7 +1030,15 @@ $('subOn').addEventListener('change', () => {
 });
 $('model').addEventListener('change', persistCfg);
 $('previewSecs').addEventListener('change', persistCfg);
-$('geminiKey').addEventListener('change', persistCfg);
+$('geminiKey').addEventListener('change', () => {
+  syncGeminiHint();
+  persistCfg();
+});
+if ($('geminiOn'))
+  $('geminiOn').addEventListener('change', () => {
+    syncGeminiHint();
+    persistCfg();
+  });
 
 const updateManualDur = (clamp = false) => {
   const st = parseInt(($('sStart').value || '').trim(), 10);
@@ -1027,7 +1152,9 @@ $('go').addEventListener('click', async () => {
   }
 });
 
-$('openFolder').addEventListener('click', async (ev) => {
+const _openFolderBtn = $('openFolder');
+if (_openFolderBtn)
+  _openFolderBtn.addEventListener('click', async (ev) => {
   try {
     ev.preventDefault();
   } catch {}
@@ -1065,7 +1192,7 @@ $('openFolder').addEventListener('click', async (ev) => {
     } catch {}
     alert(msg);
   }
-});
+  });
 
 $('timeline').addEventListener('input', () => {
   const v = parseInt($('timeline').value || '0', 10);

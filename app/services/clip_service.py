@@ -92,6 +92,12 @@ def start_clip_job(data):
     else:
         output_dir = str(output_dir).strip()
 
+    output_dir = normalize_output_dir(output_dir)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except Exception as e:
+        raise ValueError(f"Folder output tidak bisa dibuat/diakses: {output_dir}\n\nDetail: {type(e).__name__}: {str(e)}")
+
     cleaned, enabled_segments, total_sec, warnings = _parse_segments(data.get("segments", []))
     est_bytes = estimate_total_size_bytes(total_sec)
 
@@ -109,10 +115,13 @@ def start_clip_job(data):
             except Exception:
                 continue
 
-    gemini_api_key = data.get("gemini_api_key")
-    if not gemini_api_key:
-        cfg_tmp = load_config()
-        gemini_api_key = cfg_tmp.get("gemini_api_key")
+    use_gemini_suggestions = bool(data.get("use_gemini_suggestions", False))
+    gemini_api_key = None
+    if use_gemini_suggestions:
+        gemini_api_key = data.get("gemini_api_key")
+        if not gemini_api_key:
+            cfg_tmp = load_config()
+            gemini_api_key = cfg_tmp.get("gemini_api_key")
 
     payload = {
         "url": url,
@@ -138,6 +147,7 @@ def start_clip_job(data):
     cfg["whisper_model"] = whisper_model
     cfg["subtitle_language"] = subtitle_language
     cfg["subtitle_position"] = subtitle_position
+    cfg["use_gemini_suggestions"] = use_gemini_suggestions
     save_config(cfg)
 
     return {"ok": True, "job_id": job_id, "estimated_bytes": est_bytes}
@@ -165,6 +175,28 @@ def _open_folder(path):
     return "xdg-open"
 
 
+def normalize_output_dir(path: str) -> str:
+    p = str(path or "").strip()
+    p = os.path.expandvars(os.path.expanduser(p))
+    p = os.path.abspath(p)
+    return p
+
+
+def inspect_output_dir(path: str) -> dict:
+    p = normalize_output_dir(path)
+    if not p:
+        return {"ok": False, "path": p, "error": "Output folder tidak tersedia."}
+    if not os.path.isdir(p):
+        return {"ok": False, "path": p, "error": f"Folder output tidak ditemukan: {p}"}
+    try:
+        os.listdir(p)
+    except PermissionError:
+        return {"ok": False, "path": p, "error": f"Tidak punya akses ke folder output: {p}"}
+    except Exception as e:
+        return {"ok": False, "path": p, "error": f"Folder output tidak bisa diakses: {p}\n\nDetail: {type(e).__name__}: {str(e)}"}
+    return {"ok": True, "path": p, "error": None}
+
+
 def open_output_folder(job_id):
     job = get_job(job_id)
     if not job:
@@ -175,11 +207,21 @@ def open_output_folder(job_id):
         raise ValueError("Output folder tidak tersedia.")
 
     output_dir = str(output_dir)
+    inspected = inspect_output_dir(output_dir)
+    output_dir = inspected.get("path") or output_dir
+    if not inspected.get("ok"):
+        msg = str(inspected.get("error") or "Folder output tidak bisa diakses.")
+        try:
+            append_job_log(job_id, f"\n❌ {msg}\n")
+        except Exception:
+            pass
+        raise ValueError(msg)
+
     append_job_log(job_id, f"\n📁 Membuka folder output: {output_dir}\n")
     try:
         method = _open_folder(output_dir)
         append_job_log(job_id, f"✅ Folder dibuka ({method}).\n")
         return {"ok": True, "output_dir": output_dir, "method": method}
     except Exception as e:
-        append_job_log(job_id, f"??? Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
+        append_job_log(job_id, f"❌ Gagal membuka folder: {type(e).__name__}: {str(e)}\n")
         raise

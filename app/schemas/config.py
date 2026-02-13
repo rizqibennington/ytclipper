@@ -14,6 +14,7 @@ class ConfigResponse(BaseModel):
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
     has_gemini_key: bool | None = None
+    use_gemini_suggestions: bool | None = None
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -29,4 +30,5 @@ class ConfigUpdateRequest(BaseModel):
     subtitle_position: str | None = None
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
+    use_gemini_suggestions: bool | None = None
     gemini_api_key: str | None = None

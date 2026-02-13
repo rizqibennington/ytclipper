@@ -22,6 +22,8 @@ def get_config():
         cfg["subtitle_language"] = "id"
     if "deps_verbose" not in cfg:
         cfg["deps_verbose"] = False
+    if "use_gemini_suggestions" not in cfg:
+        cfg["use_gemini_suggestions"] = False
 
     gemini_key = cfg.get("gemini_api_key")
     cfg["has_gemini_key"] = bool(gemini_key)

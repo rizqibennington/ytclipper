@@ -1,7 +1,7 @@
 # Output clips
 clips/
 clip_*.mp4
-
+/tests
 # Temporary files
 temp_*.mp4
 temp_*.srt

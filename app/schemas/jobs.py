@@ -14,6 +14,8 @@ class JobStatusResponse(BaseModel):
     eta: str | None = None
     error: str | None = None
     output_dir: str | None = None
+    output_dir_ok: bool | None = None
+    output_dir_error: str | None = None
     success_count: int | None = None
     logs: str | None = None
 
@@ -29,4 +31,3 @@ __all__ = [
     "JobStatusResponse",
     "OpenOutputResponse",
 ]
-
