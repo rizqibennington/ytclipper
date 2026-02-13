@@ -39,6 +39,192 @@ const syncRangeFill = (el) => {
   el.style.setProperty('--pct', String(Math.max(0, Math.min(100, pct))) + '%');
 };
 
+const normText = (v) => {
+  if (v === undefined || v === null) return '';
+  return String(v);
+};
+
+const errText = (e, fallback) => {
+  if (!e) return fallback || 'Terjadi error.';
+  if (typeof e === 'string') return e;
+  if (e && typeof e.message === 'string' && e.message.trim()) return e.message;
+  try {
+    const s = JSON.stringify(e);
+    if (s && s !== '{}' && s !== '[]') return s;
+  } catch {}
+  return fallback || String(e);
+};
+
+const ensureToastWrap = () => {
+  let wrap = $('toastWrap');
+  if (wrap) return wrap;
+  wrap = document.createElement('div');
+  wrap.id = 'toastWrap';
+  wrap.className = 'toastWrap';
+  document.body.appendChild(wrap);
+  return wrap;
+};
+
+const toast = ({ type, title, message, timeout }) => {
+  const t = type || 'info';
+  const ttl = title ? normText(title) : t === 'error' ? 'Error' : t === 'success' ? 'Sukses' : t === 'warn' ? 'Peringatan' : 'Info';
+  const msg = normText(message);
+  const wrap = ensureToastWrap();
+
+  const el = document.createElement('div');
+  el.className = `toast ${t}`;
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', t === 'error' ? 'assertive' : 'polite');
+
+  const head = document.createElement('div');
+  head.className = 'toastHead';
+
+  const h = document.createElement('div');
+  h.style.minWidth = '0';
+  h.style.flex = '1';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'toastTitle';
+  titleEl.textContent = ttl;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toastClose';
+  closeBtn.type = 'button';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', 'Tutup');
+
+  head.appendChild(h);
+  h.appendChild(titleEl);
+  head.appendChild(closeBtn);
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'toastMsg';
+  msgEl.textContent = msg;
+
+  el.appendChild(head);
+  if (msg) el.appendChild(msgEl);
+
+  const dismiss = () => {
+    if (el.dataset.dismissing) return;
+    el.dataset.dismissing = '1';
+    el.classList.add('out');
+    setTimeout(() => {
+      try {
+        el.remove();
+      } catch {}
+    }, 220);
+  };
+
+  closeBtn.addEventListener('click', dismiss);
+  wrap.appendChild(el);
+
+  const ms = timeout === undefined || timeout === null ? (t === 'error' ? 6500 : 4200) : Number(timeout);
+  if (!Number.isNaN(ms) && ms > 0) setTimeout(dismiss, ms);
+  return { dismiss };
+};
+
+const copyText = async (text) => {
+  const t = normText(text);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  } catch {}
+  return false;
+};
+
+const ensureSysModal = () => {
+  let m = $('sysModal');
+  if (m) return m;
+  m = document.createElement('div');
+  m.id = 'sysModal';
+  m.className = 'modal sys';
+  m.innerHTML = `
+    <div class="box">
+      <div class="sysTop">
+        <div class="sysIcon info" id="sysIcon">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+        </div>
+        <div style="min-width:0;flex:1">
+          <h3 class="sysTitle" id="sysTitle">Info</h3>
+          <div class="sysMsg" id="sysMsg"></div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" id="sysCopy" type="button">Copy</button>
+        <button class="btn primary" id="sysOk" type="button">OK</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(m);
+
+  const close = () => {
+    m.classList.remove('on');
+  };
+  const okBtn = $('sysOk');
+  if (okBtn) okBtn.addEventListener('click', close);
+
+  m.addEventListener('click', (e) => {
+    if (e.target === m) close();
+  });
+
+  const copyBtn = $('sysCopy');
+  if (copyBtn)
+    copyBtn.addEventListener('click', async () => {
+      const txt = $('sysMsg') ? $('sysMsg').textContent : '';
+      const ok = await copyText(txt);
+      toast({ type: ok ? 'success' : 'error', title: ok ? 'Tersalin' : 'Gagal', message: ok ? 'Teks berhasil dicopy.' : 'Clipboard tidak tersedia.' });
+    });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (m.classList.contains('on')) close();
+  });
+
+  return m;
+};
+
+const alertModal = ({ type, title, message }) => {
+  const t = type || 'info';
+  const m = ensureSysModal();
+  const icon = $('sysIcon');
+  if (icon) icon.className = `sysIcon ${t}`;
+  const ttl = $('sysTitle');
+  if (ttl) ttl.textContent = title ? normText(title) : t === 'error' ? 'Error' : t === 'success' ? 'Sukses' : t === 'warn' ? 'Peringatan' : 'Info';
+  const msg = $('sysMsg');
+  if (msg) msg.textContent = normText(message);
+  m.classList.add('on');
+};
+
+const uiAlert = (message, opts) => {
+  const msg = normText(message);
+  const o = opts || {};
+  const type = o.type || 'info';
+  const title = o.title;
+  const modal = !!o.modal || msg.includes('\n') || msg.length >= 120;
+  if (modal) alertModal({ type, title, message: msg });
+  else toast({ type, title, message: msg });
+};
+
 let durationSec = 0;
 let segments = [];
 let jobId = null;
@@ -462,7 +648,7 @@ const openSegPreview = async (idx) => {
       try {
         await loadInfo();
       } catch (e) {
-        alert(e.message);
+        uiAlert(errText(e, 'Gagal memuat info video.'), { type: 'error' });
         return;
       }
     }
@@ -470,7 +656,7 @@ const openSegPreview = async (idx) => {
     const start = Math.max(0, parseInt(s.start || 0, 10));
     const end = Math.max(0, parseInt(s.end || 0, 10));
     if (end <= start) {
-      alert('Segmen tidak valid (end <= start).');
+      uiAlert('Segmen tidak valid (end <= start).', { type: 'warn' });
       return;
     }
 
@@ -520,19 +706,19 @@ const applySegEdit = async () => {
   const end = parseTime(rawEnd);
 
   if (start === null || end === null) {
-    alert('Format Start/End tidak valid. Pakai detik (123) atau MM:SS atau HH:MM:SS.');
+    uiAlert('Format Start/End tidak valid. Pakai detik (123) atau MM:SS atau HH:MM:SS.', { type: 'warn' });
     return;
   }
   if (start < 0 || end < 0) {
-    alert('Durasi tidak boleh negatif.');
+    uiAlert('Durasi tidak boleh negatif.', { type: 'warn' });
     return;
   }
   if (durationSec > 0 && (start > durationSec || end > durationSec)) {
-    alert('Start/End melebihi durasi video.');
+    uiAlert('Start/End melebihi durasi video.', { type: 'warn' });
     return;
   }
   if (end <= start) {
-    alert('End harus lebih besar dari Start.');
+    uiAlert('End harus lebih besar dari Start.', { type: 'warn' });
     return;
   }
 
@@ -540,7 +726,7 @@ const applySegEdit = async () => {
   const end2 = capped.changed ? capped.end : end;
   if (capped.changed) {
     $('segEditEnd').value = fmt(end2);
-    alert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.');
+    uiAlert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
   }
 
   s.start = start;
@@ -551,7 +737,7 @@ const applySegEdit = async () => {
   try {
     await openSegPreview(activeSegIdx);
   } catch (e) {
-    alert(e && e.message ? e.message : 'Gagal menerapkan perubahan segmen.');
+    uiAlert(errText(e, 'Gagal menerapkan perubahan segmen.'), { type: 'error' });
   }
 };
 
@@ -835,9 +1021,9 @@ const poll = async () => {
       setBusyJob(false);
       syncOpenFolderButton();
       if (data.error) {
-        alert('❌ Proses gagal!\n\n' + data.error);
+        uiAlert('❌ Proses gagal!\n\n' + normText(data.error), { type: 'error', title: 'Proses gagal', modal: true });
       } else if (data.success_count > 0) {
-        alert('✅ Selesai! ' + data.success_count + ' clip berhasil dibuat.\n\nOutput: ' + (data.output_dir || ''));
+        uiAlert('✅ Selesai! ' + data.success_count + ' clip berhasil dibuat.\n\nOutput: ' + (data.output_dir || ''), { type: 'success', title: 'Selesai', modal: true });
       }
     }
   } catch {}
@@ -996,7 +1182,7 @@ const addSeg = () => {
   const end2 = capped.changed ? capped.end : e;
   if (capped.changed) {
     $('sEnd').value = String(end2);
-    alert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.');
+    uiAlert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
   }
 
   segments.push({ enabled: true, start: s, end: end2 });
@@ -1097,7 +1283,7 @@ $('loadHeatmap').addEventListener('click', async () => {
   try {
     await runWithBusy('Memuat heatmap...', 'Mengambil Most Replayed / backup AI...', loadHeatmap);
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   } finally {
     setHeatmapLoading(false);
   }
@@ -1125,7 +1311,7 @@ $('addSeg').addEventListener('click', async () => {
       addSeg();
     });
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 $('clearSeg').addEventListener('click', () => {
@@ -1139,7 +1325,7 @@ $('review').addEventListener('click', () => {
     fillSummary();
     openModal();
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 $('closeModal').addEventListener('click', closeModal);
@@ -1148,7 +1334,7 @@ $('go').addEventListener('click', async () => {
     closeModal();
     await startJob();
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 
@@ -1164,7 +1350,7 @@ if (_openFolderBtn)
     try {
       console.warn(msg);
     } catch {}
-    alert(msg);
+    uiAlert(msg, { type: 'info' });
     return;
   }
   try {
@@ -1190,7 +1376,7 @@ if (_openFolderBtn)
     try {
       console.error(e);
     } catch {}
-    alert(msg);
+    uiAlert(msg, { type: 'error' });
   }
   });
 
@@ -1209,7 +1395,7 @@ $('play').addEventListener('click', async () => {
     if (st === 1) player.pauseVideo();
     else player.playVideo();
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 $('stop').addEventListener('click', async () => {
@@ -1220,7 +1406,7 @@ $('stop').addEventListener('click', async () => {
     player.pauseVideo();
     player.seekTo(0, true);
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 $('playPreview').addEventListener('click', async () => {
@@ -1229,14 +1415,14 @@ $('playPreview').addEventListener('click', async () => {
     if (!(await waitMainPlayer())) return;
     const s = parseInt(($('previewSecs').value || '30'), 10);
     if (Number.isNaN(s) || s < 5 || s > 600) {
-      alert('Preview detik harus 5-600');
+      uiAlert('Preview detik harus 5-600', { type: 'warn' });
       return;
     }
     previewStopAt = s;
     player.seekTo(0, true);
     player.playVideo();
   } catch (e) {
-    alert(e.message);
+    uiAlert(errText(e), { type: 'error' });
   }
 });
 
