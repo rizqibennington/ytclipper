@@ -6,10 +6,11 @@ import sys
 import time
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 
-from config_store import load_config, save_config
+from app.config_store import load_config, save_config
 
 
 def _env_bool(name, default=False):
@@ -21,6 +22,11 @@ def _env_bool(name, default=False):
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _project_logs_dir():
+    base_dir = Path(__file__).resolve().parent.parent
+    return str(base_dir / "logs")
 
 
 def _get_mem_mb():
@@ -135,12 +141,17 @@ def _pause_if_needed(logger, pause_file, dep=None):
         time.sleep(0.35)
 
 
+def _project_bin_dir():
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root_dir, "bin")
+
+
 def _get_ffmpeg_path():
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
         return system_ffmpeg
 
-    local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    local_bin = _project_bin_dir()
     local_ffmpeg = os.path.join(local_bin, "ffmpeg.exe")
     if os.path.exists(local_ffmpeg):
         return local_ffmpeg
@@ -152,7 +163,7 @@ def _download_ffmpeg(logger, verbose=False, pause_file=None):
     _pause_if_needed(logger, pause_file, dep="ffmpeg")
     logger.emit("dep.start", dep="ffmpeg", status="pending")
 
-    local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    local_bin = _project_bin_dir()
     os.makedirs(local_bin, exist_ok=True)
 
     url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
@@ -339,7 +350,7 @@ def cek_dependensi(
     else:
         verbose = bool(verbose)
     pause_file = pause_file or os.environ.get("YTCLIPPER_DEPS_PAUSE_FILE") or os.path.join(os.path.expanduser("~"), ".ytclipper_deps.pause")
-    log_path = log_path or os.environ.get("YTCLIPPER_DEPS_LOG") or os.path.join(os.path.expanduser("~"), ".ytclipper_deps.jsonl")
+    log_path = log_path or os.environ.get("YTCLIPPER_DEPS_LOG") or os.path.join(_project_logs_dir(), "deps.jsonl")
 
     logger = _DepsLogger(log_path, verbose=verbose)
     try:
@@ -415,18 +426,13 @@ def cek_dependensi(
         else:
             logger.emit("dep.skip", dep="ffmpeg", status="success", reason="already_present", ffmpeg_path=ffmpeg_path)
 
-        local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+        local_bin = _project_bin_dir()
         if local_bin and local_bin not in os.environ.get("PATH", ""):
             os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
             logger.emit("path.update", dep="ffmpeg", status="success", added=local_bin)
 
         logger.emit("deps.check.done", status="success")
-        return {
-            "ok": True,
-            "log_path": log_path,
-            "pause_file": pause_file,
-            "ffmpeg_path": ffmpeg_path,
-        }
+        return {"ok": True, "log_path": log_path, "pause_file": pause_file, "ffmpeg_path": ffmpeg_path}
     except Exception as e:
         logger.emit("deps.check.done", status="failed", error=str(e), traceback=traceback.format_exc(limit=20))
         raise

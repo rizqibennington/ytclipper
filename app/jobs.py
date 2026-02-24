@@ -2,7 +2,7 @@ import contextlib
 import threading
 import time
 
-from clipper import format_hhmmss, proses_dengan_segmen
+from app.clipper import format_hhmmss, proses_dengan_segmen
 
 
 _JOBS_LOCK = threading.Lock()
@@ -136,6 +136,7 @@ def run_job(job_id, payload):
                 crop_mode=payload["crop_mode"],
                 use_subtitle=payload["use_subtitle"],
                 whisper_model=payload.get("whisper_model"),
+                subtitle_language=payload.get("subtitle_language"),
                 subtitle_position=payload.get("subtitle_position", "middle"),
                 output_dir=payload.get("output_dir"),
                 apply_padding=payload.get("apply_padding", False),

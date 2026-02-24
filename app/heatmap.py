@@ -5,7 +5,7 @@ import time
 
 import requests
 
-from core_constants import MAX_DURATION, MIN_SCORE
+from app.core_constants import MAX_DURATION, MIN_SCORE
 
 
 def _extract_balanced(text, start_index, open_ch, close_ch):
@@ -256,7 +256,13 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
     sess = session or requests.Session()
     timeout = (6, 20)
     if os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") is not None:
-        scan_initial_data = str(os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") or "").strip().lower() not in ("0", "false", "no", "off", "")
+        scan_initial_data = str(os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") or "").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+            "",
+        )
     else:
         scan_initial_data = False
 
@@ -355,11 +361,7 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
         key = (int(start_s * 1000), int(dur_s * 1000))
         prev = normalized.get(key)
         if prev is None or score > prev["score"]:
-            normalized[key] = {
-                "start": start_s,
-                "duration": min(dur_s, float(MAX_DURATION)),
-                "score": float(score),
-            }
+            normalized[key] = {"start": start_s, "duration": min(dur_s, float(MAX_DURATION)), "score": float(score)}
 
     items = list(normalized.values())
     items.sort(key=lambda x: x["score"], reverse=True)
@@ -377,7 +379,6 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
         return items[: max(1, int(fallback_limit))]
         if diag_out is not None:
             diag_out["total_ms"] = int((time.perf_counter() - t_all) * 1000)
-
 
     chapter_items = _build_chapter_segments(chapter_starts, duration_seconds)
     if chapter_items:

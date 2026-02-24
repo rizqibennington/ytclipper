@@ -6,11 +6,11 @@ import json
 import tempfile
 from datetime import datetime
 
-from config_store import default_output_dir
-from core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
-from ffmpeg_deps import cek_dependensi
-from subtitle_ai import generate_subtitle, set_whisper_model
-from yt_info import extract_video_id, get_duration
+from app.config_store import default_output_dir
+from app.core_constants import BOTTOM_HEIGHT, MAX_DURATION, PADDING, TOP_HEIGHT
+from app.ffmpeg_deps import cek_dependensi
+from app.subtitle_ai import generate_subtitle, set_whisper_model
+from app.yt_info import extract_video_id, get_duration
 from app.services.gemini_service import generate_clip_metadata
 
 
@@ -54,6 +54,7 @@ def proses_satu_clip(
     total_duration,
     crop_mode="default",
     use_subtitle=False,
+    subtitle_language=None,
     subtitle_position="middle",
     output_dir=None,
     apply_padding=False,
@@ -174,6 +175,29 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
+        elif crop_mode == "fit":
+            cmd_crop = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                temp_file,
+                "-vf",
+                "scale=720:1280:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "26",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                cropped_file,
+            ]
         elif crop_mode == "split_left":
             vf = (
                 f"scale='max(720,iw*1280/ih)':1280[scaled];"
@@ -208,7 +232,7 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
-        else:
+        elif crop_mode == "split_right":
             vf = (
                 f"scale='max(720,iw*1280/ih)':1280[scaled];"
                 f"[scaled]split=2[s1][s2];"
@@ -242,6 +266,8 @@ def proses_satu_clip(
                 "128k",
                 cropped_file,
             ]
+        else:
+            raise ValueError(f"crop_mode tidak dikenal: {crop_mode}")
 
         if event_cb:
             event_cb({"stage": "clip", "clip_index": index})
@@ -255,7 +281,7 @@ def proses_satu_clip(
         if use_subtitle:
             if event_cb:
                 event_cb({"stage": "subtitle", "clip_index": index})
-            ok = generate_subtitle(cropped_file, subtitle_file)
+            ok = generate_subtitle(cropped_file, subtitle_file, language=subtitle_language)
             if ok:
                 if event_cb:
                     event_cb({"stage": "subtitle_burn", "clip_index": index})
@@ -324,18 +350,17 @@ def proses_satu_clip(
             try:
                 print(f"✨ [AI] Menggenerate judul & caption untuk Clip #{index}...")
                 transcript_text = ""
-                
+
                 sub_source = subtitle_file if (use_subtitle and os.path.exists(subtitle_file)) else None
                 temp_sub = None
-                
+
                 if not sub_source:
                     temp_sub = unique_path(tempfile.gettempdir(), f"sub_temp_{uuid.uuid4().hex}", ".srt")
-                    # Gunakan output_file yang sudah final
                     if generate_subtitle(output_file, temp_sub):
                         sub_source = temp_sub
-                
+
                 if sub_source and os.path.exists(sub_source):
-                    with open(sub_source, 'r', encoding='utf-8') as f:
+                    with open(sub_source, "r", encoding="utf-8") as f:
                         lines = f.read().splitlines()
                         text_parts = []
                         for line in lines:
@@ -344,26 +369,27 @@ def proses_satu_clip(
                                 continue
                             text_parts.append(l)
                         transcript_text = " ".join(text_parts)
-                
+
                 if temp_sub and os.path.exists(temp_sub):
-                    try: os.remove(temp_sub)
-                    except: pass
+                    try:
+                        os.remove(temp_sub)
+                    except Exception:
+                        pass
 
                 if transcript_text.strip():
                     meta = generate_clip_metadata(transcript_text, gemini_api_key)
                     meta_file = os.path.splitext(output_file)[0] + "_ai.txt"
                     with open(meta_file, "w", encoding="utf-8") as f:
-                        f.write(f"JUDUL:\n")
+                        f.write("JUDUL:\n")
                         for t in meta.get("titles", []):
                             f.write(f"- {t}\n")
                         f.write(f"\nCAPTION:\n{meta.get('caption', '')}\n")
                         f.write(f"\nHASHTAGS:\n{' '.join(meta.get('hashtags', []))}\n")
-                    
+
                     print(f"✅ [AI] Saran judul & caption tersimpan di {os.path.basename(meta_file)}")
-                    # Kirim sinyal JSON ke log biar bisa diparsing UI (future proof)
                     print(f"__AI_JSON__{json.dumps(meta)}")
                 else:
-                     print(f"⚠️ [AI Warning] Tidak ada suara/transkrip terdeteksi untuk AI.")
+                    print("⚠️ [AI Warning] Tidak ada suara/transkrip terdeteksi untuk AI.")
             except Exception as e:
                 print(f"⚠️ [AI Error] {str(e)}")
 
@@ -395,6 +421,7 @@ def proses_dengan_segmen(
     crop_mode="default",
     use_subtitle=False,
     whisper_model=None,
+    subtitle_language=None,
     subtitle_position="middle",
     output_dir=None,
     apply_padding=False,
@@ -447,6 +474,7 @@ def proses_dengan_segmen(
             total_duration=total_duration,
             crop_mode=crop_mode,
             use_subtitle=use_subtitle,
+            subtitle_language=subtitle_language,
             subtitle_position=subtitle_position,
             output_dir=output_dir,
             apply_padding=apply_padding,
@@ -460,4 +488,3 @@ def proses_dengan_segmen(
         raise RuntimeError("Semua segmen gagal diproses.")
 
     return {"success_count": success, "output_dir": output_dir}
-
