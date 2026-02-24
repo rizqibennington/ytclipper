@@ -1,7 +1,6 @@
 # Output clips
 clips/
 clip_*.mp4
-
 # Temporary files
 temp_*.mp4
 temp_*.srt
@@ -52,6 +51,7 @@ models/
 
 # Logs
 *.log
+logs/
 
 # FFmpeg binaries (auto-downloaded)
 bin/
