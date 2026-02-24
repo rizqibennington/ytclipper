@@ -9,6 +9,7 @@
   <meta name="theme-color" content="#0b0f14" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2214%22%20rx%3D%223%22%20fill%3D%22%23111824%22%20stroke%3D%22%2348d0ff%22%20stroke-width%3D%221.6%22/%3E%3Cpath%20d%3D%22M10%209v6l6-3z%22%20fill%3D%22%2348d0ff%22/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
 </head>
 <body>
   <div class="wrap">
@@ -201,7 +202,7 @@
           </svg>
           Tambah Segmen Manual
         </h2>
-        <div class="muted" style="margin:-6px 0 12px 0">Kalau mau klip bagian tertentu, isi start/end lalu Tambah. Batas per klip: 02:59 (179 detik).</div>
+        <div class="muted" style="margin:-6px 0 12px 0">Kalau mau klip bagian tertentu, isi start/end lalu Tambah. Batas per klip: 03:00 (180 detik).</div>
         <label title="Rentang waktu klip manual (detik).">Start / End (manual)</label>
         <div class="row">
           <input id="sStart" type="number" min="0" step="1" title="Start detik." />
@@ -305,7 +306,7 @@
     <div class="box">
       <h3>Preview Heatmap</h3>
       <div class="muted" id="segMeta"></div>
-      <div class="muted">Batas per klip: 02:59 (179 detik).</div>
+      <div class="muted">Batas per klip: 03:00 (180 detik).</div>
       <div style="height:10px"></div>
       <div class="player">
         <div id="segPlayer"></div>
@@ -322,12 +323,12 @@
       <h3 style="margin:0 0 10px 0">Edit Segment</h3>
       <div class="row">
         <div>
-          <label title="Format: detik (123) atau MM:SS atau HH:MM:SS">Start</label>
-          <input id="segEditStart" type="text" placeholder="MM:SS" />
+          <label title="Format: MM:SS">Start</label>
+          <input id="segEditStart" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="5" />
         </div>
         <div>
-          <label title="Format: detik (123) atau MM:SS atau HH:MM:SS">End</label>
-          <input id="segEditEnd" type="text" placeholder="MM:SS" />
+          <label title="Format: MM:SS">End</label>
+          <input id="segEditEnd" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="5" />
         </div>
       </div>
       <div class="durMeter" id="durMeterSeg" aria-live="polite"></div>
@@ -402,6 +403,7 @@
   <script>
     window.__YTCLIPPER_DEFAULT_OUTDIR__ = "{{ default_output_dir }}";
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="/static/seg_bulk_buttons_state.js"></script>
   <script src="/static/open_folder_state.js"></script>
   <script src="/static/app.js"></script>

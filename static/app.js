@@ -29,6 +29,37 @@ const parseTime = (raw) => {
   return null;
 };
 
+const formatMmSsLive = (el) => {
+  if (!el) return '';
+  const raw = String(el.value || '');
+  const last = String(el.dataset.lastValue || '');
+  const deleting = raw.length < last.length;
+  const digits = raw.replace(/\D/g, '');
+
+  let out = '';
+  if (digits.length === 0) out = '';
+  else if (digits.length === 1) out = digits;
+  else if (digits.length === 2) out = deleting ? digits : digits + ':';
+  else {
+    const mm = digits.slice(0, 2);
+    const ss = digits.slice(2, 4);
+    out = mm + ':' + ss;
+  }
+
+  el.dataset.lastValue = out;
+
+  if (el.value !== out) {
+    const atEnd = el.selectionStart === raw.length && el.selectionEnd === raw.length;
+    el.value = out;
+    if (atEnd) {
+      try {
+        el.setSelectionRange(out.length, out.length);
+      } catch {}
+    }
+  }
+  return out;
+};
+
 const syncRangeFill = (el) => {
   if (!el) return;
   const min = parseFloat(el.min || '0');
@@ -54,6 +85,48 @@ const errText = (e, fallback) => {
   } catch {}
   return fallback || String(e);
 };
+
+const escapeHtml = (s) =>
+  String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const normAlertType = (t) => {
+  const x = String(t || 'info').toLowerCase();
+  if (x === 'warn' || x === 'warning') return 'warning';
+  if (x === 'err') return 'error';
+  if (x === 'ok') return 'success';
+  if (x === 'info' || x === 'success' || x === 'error' || x === 'question') return x;
+  return 'info';
+};
+
+const ensureSwalToast = (() => {
+  let mixin = null;
+  return () => {
+    const Swal = window.Swal;
+    if (!Swal) return null;
+    if (mixin) return mixin;
+    mixin = Swal.mixin({
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 4200,
+      timerProgressBar: true,
+      background: '#111824',
+      color: '#e8edf2',
+      didOpen: (el) => {
+        try {
+          el.addEventListener('mouseenter', Swal.stopTimer);
+          el.addEventListener('mouseleave', Swal.resumeTimer);
+        } catch {}
+      },
+    });
+    return mixin;
+  };
+})();
 
 const ensureToastWrap = () => {
   let wrap = $('toastWrap');
@@ -218,9 +291,43 @@ const alertModal = ({ type, title, message }) => {
 const uiAlert = (message, opts) => {
   const msg = normText(message);
   const o = opts || {};
-  const type = o.type || 'info';
-  const title = o.title;
+  const type = normAlertType(o.type || 'info');
+  const title = o.title ? normText(o.title) : type === 'error' ? 'Error' : type === 'success' ? 'Sukses' : type === 'warning' ? 'Peringatan' : 'Info';
   const modal = !!o.modal || msg.includes('\n') || msg.length >= 120;
+
+  const Swal = window.Swal;
+  if (Swal && typeof Swal.fire === 'function') {
+    if (modal) {
+      Swal.fire({
+        icon: type,
+        title,
+        html: `<pre style="white-space:pre-wrap;margin:0;text-align:left">${escapeHtml(msg)}</pre>`,
+        background: '#111824',
+        color: '#e8edf2',
+        confirmButtonColor: '#2b5cff',
+      });
+      return;
+    }
+    const t = ensureSwalToast();
+    if (t && typeof t.fire === 'function') {
+      t.fire({
+        icon: type,
+        title,
+        text: msg,
+      });
+      return;
+    }
+    Swal.fire({
+      icon: type,
+      title,
+      text: msg,
+      background: '#111824',
+      color: '#e8edf2',
+      confirmButtonColor: '#2b5cff',
+    });
+    return;
+  }
+
   if (modal) alertModal({ type, title, message: msg });
   else toast({ type, title, message: msg });
 };
@@ -706,7 +813,7 @@ const applySegEdit = async () => {
   const end = parseTime(rawEnd);
 
   if (start === null || end === null) {
-    uiAlert('Format Start/End tidak valid. Pakai detik (123) atau MM:SS atau HH:MM:SS.', { type: 'warn' });
+    uiAlert('Format Start/End tidak valid. Pakai MM:SS.', { type: 'warn' });
     return;
   }
   if (start < 0 || end < 0) {
@@ -726,7 +833,7 @@ const applySegEdit = async () => {
   const end2 = capped.changed ? capped.end : end;
   if (capped.changed) {
     $('segEditEnd').value = fmt(end2);
-    uiAlert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
+    uiAlert('Durasi klip dibatasi maksimal 03:00. End otomatis dipotong di 180 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
   }
 
   s.start = start;
@@ -761,7 +868,7 @@ const validateSegments = () => {
   for (const s of segs) {
     if (s.start < 0 || s.end < 0) throw new Error('Durasi tidak boleh negatif.');
     if (s.end <= s.start) throw new Error('End harus lebih besar dari Start.');
-    if (s.end - s.start > MAX_CLIP_S) throw new Error('Durasi klip maksimal 02:59 (179 detik).');
+    if (s.end - s.start > MAX_CLIP_S) throw new Error('Durasi klip maksimal 03:00 (180 detik).');
   }
   return segs;
 };
@@ -866,10 +973,10 @@ const appendLog = (line) => {
   el.scrollTop = el.scrollHeight;
 };
 
-const MAX_CLIP_S = 179;
+const MAX_CLIP_S = 180;
 const DUR_NEAR_S = 170;
 const DUR_WARN_S = 175;
-const DUR_MAX_S = 179;
+const DUR_MAX_S = 180;
 
 let _beepCtx = null;
 let _lastBeepTs = 0;
@@ -907,14 +1014,14 @@ const setDurMeter = (el, start, end) => {
   el.classList.remove('near', 'warn', 'max');
   if (start === null || end === null || end <= start) {
     el.style.setProperty('--pct', '0%');
-    el.textContent = 'Durasi: - / 02:59';
+    el.textContent = 'Durasi: - / 03:00';
     return;
   }
   const dur = Math.max(0, Math.floor(end - start));
   const pct = Math.max(0, Math.min(100, (dur / MAX_CLIP_S) * 100));
   el.style.setProperty('--pct', pct.toFixed(1) + '%');
-  el.textContent = `Durasi: ${fmt(dur)} / 02:59`;
-  if (dur >= DUR_MAX_S) el.classList.add('max');
+  el.textContent = `Durasi: ${fmt(dur)} / 03:00`;
+  if (dur > MAX_CLIP_S) el.classList.add('max');
   else if (dur >= DUR_WARN_S) el.classList.add('warn');
   else if (dur >= DUR_NEAR_S) el.classList.add('near');
 };
@@ -925,7 +1032,7 @@ const enforceMaxDur = (start, end, label) => {
   const dur = end - start;
   if (dur <= MAX_CLIP_S) return { start, end, changed: false };
   const newEnd = start + MAX_CLIP_S;
-  appendLog(`[durasi] ${label || 'segmen'} melebihi 02:59, auto-trim end ke ${fmt(newEnd)}`);
+  appendLog(`[durasi] ${label || 'segmen'} melebihi 03:00, auto-trim end ke ${fmt(newEnd)}`);
   beep();
   return { start, end: newEnd, changed: true };
 };
@@ -1182,7 +1289,7 @@ const addSeg = () => {
   const end2 = capped.changed ? capped.end : e;
   if (capped.changed) {
     $('sEnd').value = String(end2);
-    uiAlert('Durasi klip dibatasi maksimal 02:59. End otomatis dipotong di 179 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
+    uiAlert('Durasi klip dibatasi maksimal 03:00. End otomatis dipotong di 180 detik dari start.', { type: 'warn', title: 'Durasi dibatasi' });
   }
 
   segments.push({ enabled: true, start: s, end: end2 });
@@ -1240,6 +1347,9 @@ const updateManualDur = (clamp = false) => {
     }
   }
   setDurMeter($('durMeterManual'), start, end);
+  const over = start !== null && end !== null && end > start && end - start > MAX_CLIP_S;
+  $('sStart').classList.toggle('timeInvalid', over);
+  $('sEnd').classList.toggle('timeInvalid', over);
   if (start !== null && end !== null && end > start) {
     const dur = Math.floor(end - start);
     if (dur >= DUR_WARN_S && dur < DUR_MAX_S) beep();
@@ -1259,21 +1369,36 @@ const updateSegEditDur = (clamp = false) => {
     }
   }
   setDurMeter($('durMeterSeg'), start, end);
+  const over = start !== null && end !== null && end > start && end - start > MAX_CLIP_S;
+  $('segEditStart').classList.toggle('timeInvalid', over);
+  $('segEditEnd').classList.toggle('timeInvalid', over);
   if (start !== null && end !== null && end > start) {
     const dur = Math.floor(end - start);
     if (dur >= DUR_WARN_S && dur < DUR_MAX_S) beep();
   }
 };
 
-$('sStart').addEventListener('input', () => updateManualDur(true));
-$('sEnd').addEventListener('input', () => updateManualDur(true));
-$('sStart').addEventListener('change', () => updateManualDur(true));
-$('sEnd').addEventListener('change', () => updateManualDur(true));
+$('sStart').addEventListener('input', () => updateManualDur(false));
+$('sEnd').addEventListener('input', () => updateManualDur(false));
+$('sStart').addEventListener('change', () => updateManualDur(false));
+$('sEnd').addEventListener('change', () => updateManualDur(false));
 
-$('segEditStart').addEventListener('input', () => updateSegEditDur(true));
-$('segEditEnd').addEventListener('input', () => updateSegEditDur(true));
-$('segEditStart').addEventListener('change', () => updateSegEditDur(true));
-$('segEditEnd').addEventListener('change', () => updateSegEditDur(true));
+$('segEditStart').addEventListener('input', (e) => {
+  formatMmSsLive(e.target);
+  updateSegEditDur(false);
+});
+$('segEditEnd').addEventListener('input', (e) => {
+  formatMmSsLive(e.target);
+  updateSegEditDur(false);
+});
+$('segEditStart').addEventListener('change', (e) => {
+  formatMmSsLive(e.target);
+  updateSegEditDur(false);
+});
+$('segEditEnd').addEventListener('change', (e) => {
+  formatMmSsLive(e.target);
+  updateSegEditDur(false);
+});
 
 updateManualDur(false);
 

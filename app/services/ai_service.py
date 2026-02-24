@@ -91,7 +91,7 @@ def _build_ai_segments(transcript_segments, duration_seconds, limit=10):
         return []
 
     max_len = float(MAX_DURATION)
-    duration_options = [20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 179.0]
+    duration_options = [20.0, 30.0, 45.0, 60.0, 90.0, 120.0, max_len]
 
     keywords = {
         "intinya",

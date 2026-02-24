@@ -105,7 +105,7 @@ def start_clip_job(data):
     create_job(job_id, output_dir=output_dir)
 
     if warnings:
-        append_job_log(job_id, "\n⏱️ Standar durasi: maksimal 02:59 (179 detik) per klip.\n")
+        append_job_log(job_id, "\n⏱️ Standar durasi: maksimal 03:00 (180 detik) per klip.\n")
         for w in warnings[:80]:
             try:
                 append_job_log(
