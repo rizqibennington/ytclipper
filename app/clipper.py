@@ -99,26 +99,10 @@ def proses_satu_clip(
     subtitle_file = unique_path(output_dir, f"temp_{index}_{ts}_{tag}", ".srt")
     output_file = unique_path(output_dir, stem, ".mp4")
 
-    cmd_download = [
-        sys.executable,
-        "-m",
-        "yt_dlp",
-        "--force-ipv4",
-        "--quiet",
-        "--no-warnings",
-        "--downloader",
-        "ffmpeg",
-        "--downloader-args",
-        f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
-        "-f",
+    format_candidates = [
         "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-        "--merge-output-format",
-        "mp4",
-        "--restrict-filenames",
-    ] + get_yt_dlp_cookies_args() + [
-        "-o",
-        temp_file,
-        f"https://youtu.be/{video_id}",
+        "bestvideo+bestaudio/best",
+        "best",
     ]
 
     try:
@@ -152,7 +136,37 @@ def proses_satu_clip(
 
         if event_cb:
             event_cb({"stage": "download", "clip_index": index})
-        _run(cmd_download, "download")
+        last_error = None
+        for fmt in format_candidates:
+            cmd_download = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--force-ipv4",
+                "--quiet",
+                "--no-warnings",
+                "--downloader",
+                "ffmpeg",
+                "--downloader-args",
+                f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
+                "-f",
+                fmt,
+                "--merge-output-format",
+                "mp4",
+                "--restrict-filenames",
+            ] + get_yt_dlp_cookies_args() + [
+                "-o",
+                temp_file,
+                f"https://youtu.be/{video_id}",
+            ]
+            try:
+                _run(cmd_download, f"download[{fmt}]")
+                last_error = None
+                break
+            except subprocess.CalledProcessError as e:
+                last_error = e
+        if last_error:
+            raise last_error
 
         if not os.path.exists(temp_file):
             return False

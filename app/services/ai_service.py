@@ -34,27 +34,40 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
     tmpdir = tempfile.TemporaryDirectory(prefix="ytclipper_ai_")
     out_tpl = os.path.join(tmpdir.name, "audio.%(ext)s")
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "yt_dlp",
-        "--force-ipv4",
-        "--quiet",
-        "--no-warnings",
-        "--no-playlist",
-        "-f",
+    format_candidates = [
         "bestaudio/best",
-        "-x",
-        "--audio-format",
-        "mp3",
-    ] + get_yt_dlp_cookies_args() + [
-        "-o",
-        out_tpl,
-        str(url),
+        "best",
     ]
 
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        last_error = None
+        for fmt in format_candidates:
+            cmd = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--force-ipv4",
+                "--quiet",
+                "--no-warnings",
+                "--no-playlist",
+                "-f",
+                fmt,
+                "-x",
+                "--audio-format",
+                "mp3",
+            ] + get_yt_dlp_cookies_args() + [
+                "-o",
+                out_tpl,
+                str(url),
+            ]
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                last_error = None
+                break
+            except subprocess.CalledProcessError as e:
+                last_error = e
+        if last_error:
+            raise last_error
     except subprocess.CalledProcessError as e:
         err = (e.stderr or "").strip() or (e.stdout or "").strip()
         tmpdir.cleanup()
