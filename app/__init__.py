@@ -20,8 +20,13 @@ def create_app():
 
     base_dir = Path(__file__).resolve().parent.parent
     static_dir = base_dir / "static"
+    print(f"DEBUG: Base dir: {base_dir}")
+    print(f"DEBUG: Static dir: {static_dir} (exists: {static_dir.is_dir()})")
+    print(f"DEBUG: Root path: {app.root_path}")
     if static_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    else:
+        print("WARNING: Static directory not found!")
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_exc_handler(request, exc):
