@@ -75,6 +75,9 @@ def proses_satu_clip(
         start = max(0, start_original)
         end = min(end_original, total_duration)
 
+    if total_duration is not None:
+        start = min(start, total_duration)
+
     max_end = start + float(MAX_DURATION)
     if end > max_end:
         end = max_end
@@ -471,16 +474,27 @@ def proses_dengan_segmen(
         raise ValueError("Tidak ada segmen yang aktif.")
 
     cleaned = []
+    skipped = 0
     for s in enabled_segments:
         start = float(s.get("start", 0))
         end = float(s.get("end", 0))
         if start < 0 or end < 0:
-            raise ValueError("Durasi tidak boleh negatif.")
+            skipped += 1
+            continue
+        if total_duration is not None:
+            if start >= total_duration:
+                skipped += 1
+                continue
+            end = min(end, total_duration)
         if end <= start:
-            raise ValueError("End harus lebih besar dari Start.")
+            skipped += 1
+            continue
         max_end = start + float(MAX_DURATION)
         if end > max_end:
             end = max_end
+        if end <= start:
+            skipped += 1
+            continue
         cleaned.append({"start": start, "end": end, "enabled": True})
 
     success = 0
@@ -504,6 +518,8 @@ def proses_dengan_segmen(
             success += 1
 
     if success == 0:
+        if skipped > 0:
+            raise RuntimeError("Semua segmen gagal diproses. Segmen berada di luar durasi video.")
         raise RuntimeError("Semua segmen gagal diproses.")
 
     return {"success_count": success, "output_dir": output_dir}
