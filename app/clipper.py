@@ -114,6 +114,7 @@ def proses_satu_clip(
         "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
         "--merge-output-format",
         "mp4",
+        "--restrict-filenames",
     ] + get_yt_dlp_cookies_args() + [
         "-o",
         temp_file,
