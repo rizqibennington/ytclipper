@@ -43,7 +43,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
         "--no-warnings",
         "--no-playlist",
         "-f",
-        "bestaudio[ext=m4a]/bestaudio/best",
+        "bestaudio/best",
     ] + get_yt_dlp_cookies_args() + [
         "-o",
         out_tpl,
