@@ -16,7 +16,7 @@ from app.web.routes import router as pages_router
 
 
 def create_app():
-    app = FastAPI(title="YTClipper")
+    app = FastAPI(title="YTClipper", root_path=os.environ.get("YTCLIPPER_ROOT_PATH", ""))
 
     base_dir = Path(__file__).resolve().parent.parent
     static_dir = base_dir / "static"

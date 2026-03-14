@@ -1,5 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const DEFAULT_OUTDIR = window.__YTCLIPPER_DEFAULT_OUTDIR__ || '';
+const BASE_PATH = window.__YTCLIPPER_BASE__ || '';
+const apiUrl = (path) => `${BASE_PATH}${path}`;
 const fmt = (sec) => {
   sec = Math.max(0, Math.floor(sec || 0));
   const h = Math.floor(sec / 3600);
@@ -602,7 +604,7 @@ const persistCfg = async () => {
   saveLocalCfg(cfgLocal);
   try {
     const cfgServer = collectCfgServer();
-    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfgServer) });
+    await fetch(apiUrl('/api/config'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfgServer) });
   } catch {}
 };
 
@@ -1070,7 +1072,7 @@ const setProgress = (p, status, eta, isActive = true) => {
 const poll = async () => {
   if (!jobId) return;
   try {
-    const res = await fetch('/api/status/' + jobId);
+    const res = await fetch(apiUrl('/api/status/') + jobId);
     const data = await res.json();
     if (!data.ok) return;
     lastJobStatus = data;
@@ -1159,7 +1161,7 @@ const startJob = async () => {
   setLog('🚀 Memulai proses...');
   setProgress(0, 'Memulai...', '', true);
   setBusyJob(true, 'Memproses clip...', 'Memulai...');
-  const res = await fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const res = await fetch(apiUrl('/api/start'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await res.json();
   if (!data.ok) {
     setBusyJob(false);
@@ -1186,7 +1188,7 @@ const applyVideoInfo = (data) => {
 const loadInfo = async () => {
   return await runWithBusy('Memuat info video...', 'Mengambil durasi & video ID...', async () => {
     const url = validateUrl();
-    const res = await fetch('/api/video_info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    const res = await fetch(apiUrl('/api/video_info'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Gagal load info');
     applyVideoInfo(data);
@@ -1208,7 +1210,7 @@ const loadHeatmap = async () => {
   const tAll0 = performance.now();
 
   const tInfo0 = performance.now();
-  const infoRes = await fetch('/api/video_info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+  const infoRes = await fetch(apiUrl('/api/video_info'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
   const infoData = await infoRes.json();
   if (!infoData.ok) throw new Error(infoData.error || 'Gagal load info');
   const tInfoMs = performance.now() - tInfo0;
@@ -1226,7 +1228,7 @@ const loadHeatmap = async () => {
   let heatmapErr = null;
   try {
     const tHm0 = performance.now();
-    const res = await fetch('/api/heatmap', {
+    const res = await fetch(apiUrl('/api/heatmap'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, debug: heatmapDebug }),
@@ -1257,7 +1259,7 @@ const loadHeatmap = async () => {
   if (txt) txt.textContent = 'Loading (backup AI)...';
 
   try {
-    const res = await fetch('/api/ai_segments', {
+    const res = await fetch(apiUrl('/api/ai_segments'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, whisper_model: $('model').value, language: ($('subLang') ? $('subLang').value : 'id') }),
@@ -1481,7 +1483,7 @@ if (_openFolderBtn)
   try {
     await runWithBusy('Membuka folder...', 'Menyiapkan folder output...', async () => {
       appendLog('[openFolder] Request /api/open_output/' + jobId);
-      const res = await fetch('/api/open_output/' + jobId, { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/open_output/') + jobId, { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
       let data = null;
       try {
         data = await res.json();
@@ -1647,7 +1649,7 @@ const loadPlayer = (videoId) => {
 };
 
 (async () => {
-  const serverCfg = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
+  const serverCfg = await fetch(apiUrl('/api/config')).then((r) => r.json()).catch(() => ({}));
   const localCfg = loadLocalCfg();
   if (localCfg && localCfg.gemini_api_key) {
     try {
