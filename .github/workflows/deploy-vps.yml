@@ -26,9 +26,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "./*"
+          source: "*"
           target: "/home/ubuntu/rizqibennington/ytclip"
-          strip_components: 1
 
       - name: Rebuild & restart service
         uses: appleboy/ssh-action@v1.0.3
