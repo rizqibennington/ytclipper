@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.router import router as api_router
 from app.web.routes import router as pages_router
+from app.yt_utils import get_cookies_path
 
 
 def create_app():
@@ -27,6 +28,13 @@ def create_app():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     else:
         print("WARNING: Static directory not found!")
+
+    # Check cookies on startup
+    cookies_path = get_cookies_path()
+    if cookies_path:
+        print(f"INFO: Cookies file found at {cookies_path}")
+    else:
+        print("WARNING: Cookies file NOT found! YouTube requests may fail.")
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_exc_handler(request, exc):
