@@ -47,5 +47,6 @@ def load_cookies_into_session(session):
         cj = http.cookiejar.MozillaCookieJar(path)
         cj.load(ignore_discard=True, ignore_expires=True)
         session.cookies.update(cj)
+        print(f"INFO: Successfully loaded cookies from {path}")
     except Exception as e:
         print(f"WARNING: Failed to load cookies from {path}: {e}")
