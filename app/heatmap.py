@@ -6,6 +6,7 @@ import time
 import requests
 
 from app.core_constants import MAX_DURATION, MIN_SCORE
+from app.yt_utils import load_cookies_into_session
 
 
 def _extract_balanced(text, start_index, open_ch, close_ch):
@@ -254,6 +255,9 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
     diag_out = diag if isinstance(diag, dict) else None
     t_all = time.perf_counter()
     sess = session or requests.Session()
+    # Load cookies from file if available
+    load_cookies_into_session(sess)
+    
     timeout = (6, 20)
     if os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") is not None:
         scan_initial_data = str(os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") or "").strip().lower() not in (

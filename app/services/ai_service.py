@@ -12,6 +12,7 @@ from app.ffmpeg_deps import cek_dependensi
 from app.subtitle_ai import set_whisper_model, transcribe_timestamped_segments
 from app.yt_info import extract_video_id
 from app.services.gemini_service import generate_clip_metadata
+from app.yt_utils import get_yt_dlp_cookies_args
 
 
 _AI_DEPS_READY = False
@@ -43,6 +44,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
         "--no-playlist",
         "-f",
         "bestaudio[ext=m4a]/bestaudio/best",
+    ] + get_yt_dlp_cookies_args() + [
         "-o",
         out_tpl,
         str(url),

@@ -4,6 +4,7 @@ import time
 import subprocess
 import sys
 from urllib.parse import parse_qs, urlparse
+from app.yt_utils import get_yt_dlp_cookies_args
 
 
 _DURATION_CACHE = {}
@@ -56,6 +57,7 @@ def get_duration(video_id):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
+    ] + get_yt_dlp_cookies_args() + [
         "--get-duration",
         f"https://youtu.be/{video_id}",
     ]

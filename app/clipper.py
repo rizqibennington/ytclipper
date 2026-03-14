@@ -12,6 +12,7 @@ from app.ffmpeg_deps import cek_dependensi
 from app.subtitle_ai import generate_subtitle, set_whisper_model
 from app.yt_info import extract_video_id, get_duration
 from app.services.gemini_service import generate_clip_metadata
+from app.yt_utils import get_yt_dlp_cookies_args
 
 
 def unique_path(folder, stem, ext):
@@ -111,6 +112,7 @@ def proses_satu_clip(
         f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
         "-f",
         "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    ] + get_yt_dlp_cookies_args() + [
         "-o",
         temp_file,
         f"https://youtu.be/{video_id}",
