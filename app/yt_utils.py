@@ -1,5 +1,7 @@
 import os
 import http.cookiejar
+import shutil
+import tempfile
 from pathlib import Path
 
 # Default path inside container (mapped to ./ytclip_data on host)
@@ -48,7 +50,12 @@ def get_yt_dlp_cookies_args():
     """
     path = get_cookies_path()
     if path:
-        return ["--cookies", path]
+        try:
+            tmp = os.path.join(tempfile.gettempdir(), "ytclipper_cookies.txt")
+            shutil.copyfile(path, tmp)
+            return ["--cookies", tmp]
+        except Exception:
+            return ["--cookies", path]
     return []
 
 def load_cookies_into_session(session):
