@@ -4,6 +4,7 @@ import sys
 import uuid
 import json
 import tempfile
+import glob
 from datetime import datetime
 
 from app.config_store import default_output_dir
@@ -97,7 +98,9 @@ def proses_satu_clip(
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     tag = uuid.uuid4().hex[:8]
     stem = f"clip_{index}_{ts}_{tag}"
-    temp_file = unique_path(output_dir, f"temp_{index}_{ts}_{tag}", ".mp4")
+    temp_base = os.path.join(output_dir, f"temp_{index}_{ts}_{tag}")
+    out_tpl = temp_base + ".%(ext)s"
+    temp_file = temp_base + ".mp4"
     cropped_file = unique_path(output_dir, f"temp_cropped_{index}_{ts}_{tag}", ".mp4")
     subtitle_file = unique_path(output_dir, f"temp_{index}_{ts}_{tag}", ".srt")
     output_file = unique_path(output_dir, stem, ".mp4")
@@ -158,12 +161,10 @@ def proses_satu_clip(
                 f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
                 "-f",
                 fmt,
-                "--merge-output-format",
-                "mp4",
                 "--restrict-filenames",
             ] + get_yt_dlp_cookies_args() + [
                 "-o",
-                temp_file,
+                out_tpl,
                 f"https://youtu.be/{video_id}",
             ]
             try:
@@ -175,6 +176,9 @@ def proses_satu_clip(
         if last_error:
             raise last_error
 
+        cand = sorted(glob.glob(temp_base + ".*"), key=lambda p: os.path.getmtime(p), reverse=True)
+        if cand:
+            temp_file = cand[0]
         if not os.path.exists(temp_file):
             return False, "File temp tidak ditemukan setelah download"
 
