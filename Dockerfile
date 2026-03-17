@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg nodejs ca-certificates \
-  && if [ -e /usr/bin/nodejs ]; then ln -sf /usr/bin/nodejs /usr/bin/node; fi \
+  && if [ -e /usr/bin/nodejs ] && [ ! -e /usr/bin/node ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi \
   && nodejs --version \
   && node --version \
   && rm -rf /var/lib/apt/lists/*
