@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg nodejs \
+  && apt-get install -y --no-install-recommends ffmpeg nodejs ca-certificates \
+  && if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
