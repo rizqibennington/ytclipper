@@ -53,6 +53,8 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
                 "--quiet",
                 "--no-warnings",
                 "--no-playlist",
+                "--remote-components",
+                "ejs:github",
                 "--extractor-args",
                 "youtube:player_client=android,ios",
                 "-f",

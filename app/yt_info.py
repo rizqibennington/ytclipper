@@ -59,6 +59,8 @@ def get_duration(video_id):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
+        "--remote-components",
+        "ejs:github",
         "--extractor-args",
         "youtube:player_client=android,ios",
     ] + get_yt_dlp_cookies_args() + [

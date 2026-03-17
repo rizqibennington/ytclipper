@@ -153,6 +153,8 @@ def proses_satu_clip(
                 "--quiet",
                 "--no-warnings",
                 "--no-playlist",
+                "--remote-components",
+                "ejs:github",
                 "--extractor-args",
                 "youtube:player_client=android,ios",
                 "--downloader",
