@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.cors import CORSMiddleware
 
 from app.api.router import router as api_router
 from app.web.routes import router as pages_router
@@ -18,6 +19,15 @@ from app.yt_utils import get_cookies_path
 
 def create_app():
     app = FastAPI(title="YTClipper", root_path=os.environ.get("YTCLIPPER_ROOT_PATH", ""))
+
+    # Add CORS middleware for domain access
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     base_dir = Path(__file__).resolve().parent.parent
     static_dir = base_dir / "static"
