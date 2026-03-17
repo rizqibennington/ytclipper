@@ -88,7 +88,7 @@ def proses_satu_clip(
 
     if duration < 1:
         print(f"⚠️ Skip - durasi terlalu pendek ({duration:.1f}s)")
-        return False
+        return False, "Durasi terlalu pendek"
 
     if output_dir is None:
         output_dir = default_output_dir()
@@ -172,7 +172,7 @@ def proses_satu_clip(
             raise last_error
 
         if not os.path.exists(temp_file):
-            return False
+            return False, "File temp tidak ditemukan setelah download"
 
         if crop_mode == "default":
             cmd_crop = [
@@ -361,12 +361,12 @@ def proses_satu_clip(
                 try:
                     os.replace(cropped_file, output_file)
                 except Exception:
-                    return False
+                    return False, "Gagal replace file output (subtitle)"
         else:
             try:
                 os.replace(cropped_file, output_file)
             except Exception:
-                return False
+                return False, "Gagal replace file output"
 
         if gemini_api_key:
             try:
@@ -416,16 +416,20 @@ def proses_satu_clip(
                 print(f"⚠️ [AI Error] {str(e)}")
 
         print(f"✅ Clip #{index} selesai → {os.path.basename(output_file)}")
-        return True
-    except subprocess.CalledProcessError:
+        return True, None
+    except subprocess.CalledProcessError as e:
         print(f"❌ [ERROR] Clip #{index} gagal (crop_mode={crop_mode})")
+        err_msg = str(e)
+        if e.stderr:
+             err_msg += "\nStderr: " + str(e.stderr).strip()[-200:]
+        
         for f in (temp_file, cropped_file, subtitle_file):
             if os.path.exists(f):
                 try:
                     os.remove(f)
                 except Exception:
                     pass
-        return False
+        return False, err_msg
     except Exception as e:
         print(f"❌ [ERROR] Clip #{index} exception: {e}")
         for f in (temp_file, cropped_file, subtitle_file):
@@ -434,7 +438,7 @@ def proses_satu_clip(
                     os.remove(f)
                 except Exception:
                     pass
-        return False
+        return False, str(e)
 
 
 def proses_dengan_segmen(
@@ -498,9 +502,10 @@ def proses_dengan_segmen(
         cleaned.append({"start": start, "end": end, "enabled": True})
 
     success = 0
+    errors = []
     for seg in cleaned:
         item = {"start": seg["start"], "end": seg["end"]}
-        ok = proses_satu_clip(
+        ok, err = proses_satu_clip(
             video_id=video_id,
             item=item,
             index=success + 1,
@@ -516,10 +521,18 @@ def proses_dengan_segmen(
         )
         if ok:
             success += 1
+        elif err:
+            errors.append(err)
 
     if success == 0:
-        if skipped > 0:
+        if skipped > 0 and not errors:
             raise RuntimeError("Semua segmen gagal diproses. Segmen berada di luar durasi video.")
-        raise RuntimeError("Semua segmen gagal diproses.")
+        
+        msg = "Semua segmen gagal diproses."
+        if errors:
+            # Ambil error terakhir atau yang paling unik
+            unique_errors = sorted(list(set(errors)))
+            msg += f"\nDetail error: {'; '.join(unique_errors)}"
+        raise RuntimeError(msg)
 
     return {"success_count": success, "output_dir": output_dir}
