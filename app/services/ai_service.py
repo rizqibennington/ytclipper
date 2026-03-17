@@ -34,6 +34,9 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
     tmpdir = tempfile.TemporaryDirectory(prefix="ytclipper_ai_")
     out_tpl = os.path.join(tmpdir.name, "audio.%(ext)s")
 
+    u = str(url or "").strip()
+    u = u.strip("`").strip().strip("\"'").strip()
+
     format_candidates = [
         "bestaudio/best",
         "best",
@@ -50,6 +53,8 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
                 "--quiet",
                 "--no-warnings",
                 "--no-playlist",
+                "--extractor-args",
+                "youtube:player_client=android,ios",
                 "-f",
                 fmt,
                 "-x",
@@ -58,7 +63,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
             ] + get_yt_dlp_cookies_args() + [
                 "-o",
                 out_tpl,
-                str(url),
+                u,
             ]
             try:
                 subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

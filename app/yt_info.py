@@ -20,7 +20,9 @@ def _duration_cache_ttl_s():
 
 
 def extract_video_id(url):
-    parsed = urlparse(url)
+    u = str(url or "").strip()
+    u = u.strip("`").strip().strip("\"'").strip()
+    parsed = urlparse(u)
 
     if parsed.hostname in ("youtu.be", "www.youtu.be"):
         return parsed.path[1:]
@@ -57,6 +59,8 @@ def get_duration(video_id):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
+        "--extractor-args",
+        "youtube:player_client=android,ios",
     ] + get_yt_dlp_cookies_args() + [
         "--get-duration",
         f"https://youtu.be/{video_id}",
