@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg nodejs npm ca-certificates \
-  && if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi \
+  && if [ -e /usr/bin/nodejs ]; then ln -sf /usr/bin/nodejs /usr/bin/node; fi \
   && node --version \
   && rm -rf /var/lib/apt/lists/*
 
@@ -18,6 +18,7 @@ ENV PORT=5000
 ENV DEBUG=0
 ENV YTCLIPPER_ROOT_PATH=/apps/ytclip
 ENV HOME=/data
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 EXPOSE 5000
 
