@@ -103,10 +103,10 @@ def proses_satu_clip(
     output_file = unique_path(output_dir, stem, ".mp4")
 
     format_candidates = [
-        "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "bestvideo+bestaudio/best",
-        "best",
-        "b",  # fallback ke format best apapun (b)
+        "best/b",
+        "bv*+ba/b",
     ]
 
     try:
