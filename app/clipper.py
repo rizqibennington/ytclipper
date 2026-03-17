@@ -106,6 +106,7 @@ def proses_satu_clip(
         "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
         "bestvideo+bestaudio/best",
         "best",
+        "b",  # fallback ke format best apapun (b)
     ]
 
     try:
