@@ -1,16 +1,19 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg nodejs ca-certificates \
-  && if [ -e /usr/bin/nodejs ] && [ ! -e /usr/bin/node ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi \
-  && nodejs --version \
-  && node --version \
-  && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg nodejs ca-certificates \
+    && if [ -e /usr/bin/nodejs ] && [ ! -e /usr/bin/node ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi \
+    && nodejs --version \
+    && node --version
 
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r /app/requirements.txt
 
 COPY . /app
 
