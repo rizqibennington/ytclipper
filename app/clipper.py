@@ -112,6 +112,15 @@ def proses_satu_clip(
         "bv*+ba/b",
     ]
 
+    # Player client fallback chain. android/ios sudah diblokir YouTube (butuh PoToken).
+    # default/tv/mweb/web_safari masih bisa jalan tanpa PoToken pada banyak kasus.
+    player_client_candidates = [
+        "default,tv_simply,mweb,web_safari",
+        "tv,mweb",
+        "web_safari,mweb",
+        "default",
+    ]
+
     try:
 
         def _clip_text(s, limit=4000):
@@ -144,38 +153,41 @@ def proses_satu_clip(
         if event_cb:
             event_cb({"stage": "download", "clip_index": index})
         last_error = None
-        for fmt in format_candidates:
-            cmd_download = [
-                sys.executable,
-                "-m",
-                "yt_dlp",
-                "--force-ipv4",
-                "--quiet",
-                "--no-warnings",
-                "--no-playlist",
-                "--remote-components",
-                "ejs:github",
-                "--extractor-args",
-                "youtube:player_client=android,ios",
-                "--downloader",
-                "ffmpeg",
-                "--downloader-args",
-                f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
-                "-f",
-                fmt,
-                "--restrict-filenames",
-            ] + get_yt_dlp_cookies_args() + [
-                "-o",
-                out_tpl,
-                f"https://youtu.be/{video_id}",
-            ]
-            try:
-                _run(cmd_download, f"download[{fmt}]")
-                last_error = None
+        downloaded = False
+        for player_client in player_client_candidates:
+            for fmt in format_candidates:
+                cmd_download = [
+                    sys.executable,
+                    "-m",
+                    "yt_dlp",
+                    "--force-ipv4",
+                    "--quiet",
+                    "--no-warnings",
+                    "--no-playlist",
+                    "--extractor-args",
+                    f"youtube:player_client={player_client}",
+                    "--downloader",
+                    "ffmpeg",
+                    "--downloader-args",
+                    f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
+                    "-f",
+                    fmt,
+                    "--restrict-filenames",
+                ] + get_yt_dlp_cookies_args() + [
+                    "-o",
+                    out_tpl,
+                    f"https://youtu.be/{video_id}",
+                ]
+                try:
+                    _run(cmd_download, f"download[client={player_client},fmt={fmt}]")
+                    last_error = None
+                    downloaded = True
+                    break
+                except subprocess.CalledProcessError as e:
+                    last_error = e
+            if downloaded:
                 break
-            except subprocess.CalledProcessError as e:
-                last_error = e
-        if last_error:
+        if last_error and not downloaded:
             raise last_error
 
         cand = sorted(glob.glob(temp_base + ".*"), key=lambda p: os.path.getmtime(p), reverse=True)
