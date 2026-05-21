@@ -65,3 +65,11 @@ debug_*.py
 # Environment Variables
 .env
 .env.local
+
+# YouTube cookies (SECRET — jangan pernah di-push)
+cookies.txt
+cookies-*.txt
+*.cookies.txt
+ytclip_data/
+/data/cookies.txt
+

@@ -8,10 +8,11 @@ from app.config_store import default_output_dir, load_config, save_config
 from app.core_constants import MAX_DURATION
 from app.jobs import append_job_log, create_job, get_job, start_job
 from app.subtitle_ai import get_whisper_model
+from app.yt_utils import normalize_youtube_url
 
 
 def _get_url(data):
-    url = str((data or {}).get("url", "")).strip()
+    url = normalize_youtube_url((data or {}).get("url", ""))
     if not url:
         raise ValueError("YouTube URL wajib diisi.")
     return url

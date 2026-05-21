@@ -1,11 +1,48 @@
 import os
 import http.cookiejar
+import re
 import shutil
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-# Default path inside container (mapped to ./ytclip_data on host)
 DEFAULT_COOKIES_PATH = "/data/cookies.txt"
+_YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def normalize_youtube_url(url):
+    u = str(url or "").strip()
+    u = u.strip().strip("` \\t\\r\\n\"'").strip()
+    if not u:
+        return ""
+    parsed = urlparse(u)
+    video_id = None
+    if parsed.hostname in ("youtu.be", "www.youtu.be"):
+        video_id = parsed.path.strip("/").split("/")[0]
+    elif parsed.hostname in ("youtube.com", "www.youtube.com", "m.youtube.com"):
+        if parsed.path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [None])[0]
+        elif parsed.path.startswith("/shorts/") or parsed.path.startswith("/embed/"):
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) >= 2:
+                video_id = parts[1]
+    elif _YOUTUBE_ID_RE.match(u):
+        video_id = u
+    if video_id:
+        video_id = str(video_id).strip().strip("` \\t\\r\\n\"'")
+        if _YOUTUBE_ID_RE.match(video_id):
+            return f"https://youtu.be/{video_id}"
+    return u
+
+
+def extract_youtube_video_id(url):
+    normalized = normalize_youtube_url(url)
+    parsed = urlparse(normalized)
+    if parsed.hostname in ("youtu.be", "www.youtu.be"):
+        video_id = parsed.path.strip("/").split("/")[0]
+        if _YOUTUBE_ID_RE.match(video_id or ""):
+            return video_id
+    return None
 
 def get_cookies_path():
     """
@@ -44,10 +81,6 @@ def get_cookies_path():
     return None
 
 def get_yt_dlp_cookies_args():
-    """
-    Returns a list of arguments for yt-dlp to use cookies if available.
-    e.g. ['--cookies', '/path/to/cookies.txt'] or []
-    """
     path = get_cookies_path()
     if path:
         try:
@@ -56,6 +89,11 @@ def get_yt_dlp_cookies_args():
             return ["--cookies", tmp]
         except Exception:
             return ["--cookies", path]
+
+    browser = str(os.environ.get("YTCLIPPER_COOKIES_FROM_BROWSER") or "").strip()
+    if browser:
+        return ["--cookies-from-browser", browser]
+
     return []
 
 def load_cookies_into_session(session):

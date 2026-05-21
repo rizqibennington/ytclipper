@@ -12,7 +12,7 @@ from app.ffmpeg_deps import cek_dependensi
 from app.subtitle_ai import set_whisper_model, transcribe_timestamped_segments
 from app.yt_info import extract_video_id
 from app.services.gemini_service import generate_clip_metadata
-from app.yt_utils import get_yt_dlp_cookies_args
+from app.yt_utils import get_yt_dlp_cookies_args, normalize_youtube_url
 
 
 _AI_DEPS_READY = False
@@ -34,8 +34,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
     tmpdir = tempfile.TemporaryDirectory(prefix="ytclipper_ai_")
     out_tpl = os.path.join(tmpdir.name, "audio.%(ext)s")
 
-    u = str(url or "").strip()
-    u = u.strip("`").strip().strip("\"'").strip()
+    u = normalize_youtube_url(url)
 
     format_candidates = [
         "bestaudio/best",
@@ -53,10 +52,8 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
                 "--quiet",
                 "--no-warnings",
                 "--no-playlist",
-                "--remote-components",
-                "ejs:github",
                 "--extractor-args",
-                "youtube:player_client=android,ios",
+                "youtube:player_client=default,tv_simply,mweb,web_safari",
                 "-f",
                 fmt,
                 "-x",

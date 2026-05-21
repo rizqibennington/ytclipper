@@ -3,8 +3,7 @@ import threading
 import time
 import subprocess
 import sys
-from urllib.parse import parse_qs, urlparse
-from app.yt_utils import get_yt_dlp_cookies_args
+from app.yt_utils import extract_youtube_video_id, get_yt_dlp_cookies_args
 
 
 _DURATION_CACHE = {}
@@ -20,22 +19,7 @@ def _duration_cache_ttl_s():
 
 
 def extract_video_id(url):
-    u = str(url or "").strip()
-    u = u.strip("`").strip().strip("\"'").strip()
-    parsed = urlparse(u)
-
-    if parsed.hostname in ("youtu.be", "www.youtu.be"):
-        return parsed.path[1:]
-
-    if parsed.hostname in ("youtube.com", "www.youtube.com"):
-        if parsed.path == "/watch":
-            return parse_qs(parsed.query).get("v", [None])[0]
-        if parsed.path.startswith("/shorts/"):
-            parts = parsed.path.split("/")
-            if len(parts) >= 3:
-                return parts[2]
-
-    return None
+    return extract_youtube_video_id(url)
 
 
 def get_duration(video_id):
@@ -59,10 +43,8 @@ def get_duration(video_id):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
-        "--remote-components",
-        "ejs:github",
         "--extractor-args",
-        "youtube:player_client=android,ios",
+        "youtube:player_client=default,tv_simply,mweb,web_safari",
     ] + get_yt_dlp_cookies_args() + [
         "--get-duration",
         f"https://youtu.be/{video_id}",

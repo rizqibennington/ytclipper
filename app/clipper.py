@@ -112,8 +112,6 @@ def proses_satu_clip(
         "bv*+ba/b",
     ]
 
-    # Player client fallback chain. android/ios sudah diblokir YouTube (butuh PoToken).
-    # default/tv/mweb/web_safari masih bisa jalan tanpa PoToken pada banyak kasus.
     player_client_candidates = [
         "default,tv_simply,mweb,web_safari",
         "tv,mweb",
@@ -140,7 +138,21 @@ def proses_satu_clip(
                         print(f"[{label}]\n" + _clip_text(err))
                 return res
             except subprocess.CalledProcessError as e:
-                cmd_text = " ".join(str(x) for x in cmd)
+                safe_cmd = []
+                skip_next = False
+                for arg in cmd:
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    if arg == "--cookies":
+                        safe_cmd.extend(["--cookies", "<cookies-file>"])
+                        skip_next = True
+                    elif arg == "--cookies-from-browser":
+                        safe_cmd.extend(["--cookies-from-browser", "<browser>"])
+                        skip_next = True
+                    else:
+                        safe_cmd.append(str(arg))
+                cmd_text = " ".join(safe_cmd)
                 print(f"[{label}] Command gagal\n{cmd_text}")
                 out = (e.stdout or "").strip()
                 err = (e.stderr or "").strip()
