@@ -12,7 +12,8 @@ _YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 def normalize_youtube_url(url):
     u = str(url or "").strip()
-    u = u.strip().strip("` \\t\\r\\n\"'").strip()
+    u = re.sub(r"[`\\s\"']*(https?://[^`\\s\"']+)[`\\s\"']*", r"\1", u)
+    u = u.strip("` \\t\\r\\n\"'")
     if not u:
         return ""
     parsed = urlparse(u)

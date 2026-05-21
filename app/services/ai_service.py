@@ -87,7 +87,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
 
 
 def _get_url(data):
-    url = str((data or {}).get("url", "")).strip()
+    url = normalize_youtube_url((data or {}).get("url", ""))
     if not url:
         raise ValueError("YouTube URL wajib diisi.")
     return url

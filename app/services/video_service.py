@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from app.yt_info import extract_video_id, get_duration
+from app.yt_utils import normalize_youtube_url
 
 
 def _heatmap_log_path():
@@ -25,7 +26,7 @@ def _append_heatmap_log(rec):
 
 
 def _get_url(data):
-    url = str((data or {}).get("url", "")).strip()
+    url = normalize_youtube_url((data or {}).get("url", ""))
     if not url:
         raise ValueError("YouTube URL wajib diisi.")
     return url

@@ -13,7 +13,7 @@ from app.ffmpeg_deps import cek_dependensi
 from app.subtitle_ai import generate_subtitle, set_whisper_model
 from app.yt_info import extract_video_id, get_duration
 from app.services.gemini_service import generate_clip_metadata
-from app.yt_utils import get_yt_dlp_cookies_args
+from app.yt_utils import get_yt_dlp_cookies_args, normalize_youtube_url
 
 
 def unique_path(folder, stem, ext):
@@ -54,6 +54,7 @@ def proses_satu_clip(
     item,
     index,
     total_duration,
+    video_url=None,
     crop_mode="default",
     use_subtitle=False,
     subtitle_language=None,
@@ -63,6 +64,9 @@ def proses_satu_clip(
     event_cb=None,
     gemini_api_key=None,
 ):
+    video_id = str(video_id or "").strip().strip("` \t\r\n\"'")
+    video_url = normalize_youtube_url(video_url or f"https://youtu.be/{video_id}")
+
     start_original = float(item.get("start", 0))
     if "end" in item:
         end_original = float(item.get("end", start_original))
@@ -106,10 +110,11 @@ def proses_satu_clip(
     output_file = unique_path(output_dir, stem, ".mp4")
 
     format_candidates = [
-        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "bestvideo+bestaudio/best",
-        "best/b",
+        "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best",
         "bv*+ba/b",
+        "bestvideo+bestaudio/best",
+        "b/best",
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
     ]
 
     player_client_candidates = [
@@ -188,7 +193,7 @@ def proses_satu_clip(
                 ] + get_yt_dlp_cookies_args() + [
                     "-o",
                     out_tpl,
-                    f"https://youtu.be/{video_id}",
+                    video_url,
                 ]
                 try:
                     _run(cmd_download, f"download[client={player_client},fmt={fmt}]")
@@ -199,6 +204,33 @@ def proses_satu_clip(
                     last_error = e
             if downloaded:
                 break
+        if last_error and not downloaded:
+            cmd_download = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--force-ipv4",
+                "--quiet",
+                "--no-warnings",
+                "--no-playlist",
+                "--extractor-args",
+                "youtube:player_client=default,tv_simply,mweb,web_safari",
+                "--download-sections",
+                f"*{start}-{end}",
+                "-f",
+                "bv*+ba/b/best",
+                "--restrict-filenames",
+            ] + get_yt_dlp_cookies_args() + [
+                "-o",
+                out_tpl,
+                video_url,
+            ]
+            try:
+                _run(cmd_download, "download[sections]")
+                last_error = None
+                downloaded = True
+            except subprocess.CalledProcessError as e:
+                last_error = e
         if last_error and not downloaded:
             raise last_error
 
@@ -491,6 +523,8 @@ def proses_dengan_segmen(
     if whisper_model:
         set_whisper_model(whisper_model)
 
+    link = normalize_youtube_url(link)
+
     if event_cb:
         event_cb({"stage": "dependency"})
     cek_dependensi(install_whisper=use_subtitle)
@@ -544,6 +578,7 @@ def proses_dengan_segmen(
             item=item,
             index=success + 1,
             total_duration=total_duration,
+            video_url=link,
             crop_mode=crop_mode,
             use_subtitle=use_subtitle,
             subtitle_language=subtitle_language,

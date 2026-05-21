@@ -7,6 +7,7 @@ from pathlib import Path
 from app.core.settings import Settings
 from app.heatmap import ambil_most_replayed
 from app.yt_info import extract_video_id
+from app.yt_utils import normalize_youtube_url
 
 
 _HEATMAP_CACHE = {}
@@ -14,7 +15,7 @@ _HEATMAP_CACHE_LOCK = threading.Lock()
 
 
 def _get_url(data):
-    url = str((data or {}).get("url", "")).strip()
+    url = normalize_youtube_url((data or {}).get("url", ""))
     if not url:
         raise ValueError("YouTube URL wajib diisi.")
     return url
