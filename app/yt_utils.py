@@ -82,20 +82,9 @@ def get_cookies_path():
     return None
 
 def get_yt_dlp_cookies_args():
-    path = get_cookies_path()
-    if path:
-        try:
-            tmp = os.path.join(tempfile.gettempdir(), "ytclipper_cookies.txt")
-            shutil.copyfile(path, tmp)
-            return ["--cookies", tmp]
-        except Exception:
-            return ["--cookies", path]
-
-    browser = str(os.environ.get("YTCLIPPER_COOKIES_FROM_BROWSER") or "").strip()
-    if browser:
-        return ["--cookies-from-browser", browser]
-
-    return []
+    # Gunakan OAuth2 secara default, karena ini paling stabil di VPS / Datacenter.
+    # Token akan dibaca dari cache (biasanya /data/.cache/yt-dlp)
+    return ["--username", "oauth2", "--password", ""]
 
 def load_cookies_into_session(session):
     """
