@@ -118,6 +118,8 @@ def proses_satu_clip(
     ]
 
     player_client_candidates = [
+        "ios",
+        "android",
         "web_creator,tv_embedded,mweb",
         "tv_simply,mweb",
         "web_safari,mweb",
@@ -216,7 +218,7 @@ def proses_satu_clip(
                 "--no-warnings",
                 "--no-playlist",
                 "--extractor-args",
-                "youtube:player_client=web_creator,tv_embedded,mweb",
+                "youtube:player_client=ios,android,web_creator",
                 "--download-sections",
                 f"*{start}-{end}",
                 "-f",
