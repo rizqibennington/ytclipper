@@ -6,6 +6,12 @@ clip_*.mp4
 *.mkv
 *.m4a
 *.part
+*.json3
+*.vtt
+*.srt
+*.jpg
+*.webp
+*.info.json
 
 # Temporary files
 temp_*.mp4

@@ -9,9 +9,8 @@ import threading
 from app.config_store import load_config
 from app.core_constants import MAX_DURATION
 from app.ffmpeg_deps import cek_dependensi
-from app.subtitle_ai import set_whisper_model, transcribe_timestamped_segments
 from app.yt_info import extract_video_id
-from app.services.gemini_service import generate_clip_metadata
+from app.services.gemini_service import generate_clip_metadata, process_audio_with_gemini
 from app.yt_utils import get_yt_dlp_cookies_args, normalize_youtube_url
 
 
@@ -26,7 +25,7 @@ def _ensure_ai_deps():
     with _AI_DEPS_LOCK:
         if _AI_DEPS_READY:
             return
-        cek_dependensi(install_whisper=True)
+        cek_dependensi(install_whisper=False)
         _AI_DEPS_READY = True
 
 
@@ -37,40 +36,56 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
     u = normalize_youtube_url(url)
 
     format_candidates = [
-        "bestaudio/best",
-        "best",
+        "139", # m4a 48k (paling kecil)
+        "140", # m4a 128k
+        "249", # webm 50k
+        "250", # webm 70k
+        "wa",  # worst audio
+    ]
+    player_client_candidates = [
+        "ios",
+        "android",
+        "web_creator,tv_embedded,mweb",
+        "tv_simply,mweb",
+        "",  # Empty means don't pass --extractor-args, use yt-dlp default
     ]
 
     try:
         last_error = None
-        for fmt in format_candidates:
-            cmd = [
-                sys.executable,
-                "-m",
-                "yt_dlp",
-                "--force-ipv4",
-                "--quiet",
-                "--no-warnings",
-                "--no-playlist",
-                "--extractor-args",
-                "youtube:player_client=default,tv_simply,mweb,web_safari",
-                "-f",
-                fmt,
-                "-x",
-                "--audio-format",
-                "mp3",
-            ] + get_yt_dlp_cookies_args() + [
-                "-o",
-                out_tpl,
-                u,
-            ]
-            try:
-                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                last_error = None
+        downloaded = False
+        for player_client in player_client_candidates:
+            for fmt in format_candidates:
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "yt_dlp",
+                    "--force-ipv4",
+                    "--quiet",
+                    "--no-warnings",
+                    "--no-playlist",
+                ]
+                if player_client:
+                    cmd.extend(["--extractor-args", f"youtube:player_client={player_client}"])
+                cmd.extend([
+                    "-f",
+                    fmt,
+                ])
+                cmd.extend(get_yt_dlp_cookies_args())
+                cmd.extend([
+                    "-o",
+                    out_tpl,
+                    u,
+                ])
+                try:
+                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    last_error = None
+                    downloaded = True
+                    break
+                except subprocess.CalledProcessError as e:
+                    last_error = e
+            if downloaded:
                 break
-            except subprocess.CalledProcessError as e:
-                last_error = e
-        if last_error:
+        if last_error and not downloaded:
             raise last_error
     except subprocess.CalledProcessError as e:
         err = (e.stderr or "").strip() or (e.stdout or "").strip()
@@ -84,6 +99,101 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
         raise ValueError("Gagal download audio untuk backup AI (file audio tidak ditemukan).")
 
     return audio_path, tmpdir
+
+
+def _fetch_youtube_subtitle(url: str, language: str) -> list[dict]:
+    import json
+    import glob
+    with tempfile.TemporaryDirectory(prefix="ytclipper_sub_") as tmpdir:
+        out_tpl = os.path.join(tmpdir, "sub.%(ext)s")
+        cmd = [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--quiet",
+            "--no-warnings",
+            "--no-playlist",
+            "--write-auto-sub",
+            "--write-sub",
+            "--sub-lang", f"{language},en,id",
+            "--sub-format", "json3",
+            "--skip-download",
+        ] + get_yt_dlp_cookies_args() + [
+            "-o", out_tpl,
+            normalize_youtube_url(url)
+        ]
+        
+        try:
+            res = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except Exception as e:
+            print("Yt-dlp error:", e)
+            
+        hits = glob.glob(os.path.join(tmpdir, "*.json3"))
+        if not hits:
+            return []
+            
+        target_file = None
+        for h in hits:
+            if f".{language}.json3" in h:
+                target_file = h
+                break
+        if not target_file:
+            for h in hits:
+                if ".id.json3" in h or ".en.json3" in h:
+                    target_file = h
+                    break
+        if not target_file:
+            target_file = hits[0]
+            
+        try:
+            with open(target_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return []
+            
+        segments = []
+        events = data.get('events', [])
+        
+        # Consolidate short events into ~5 second chunks for better scoring
+        current_chunk = []
+        chunk_start = -1.0
+        chunk_end = 0.0
+        
+        for ev in events:
+            start_ms = ev.get('tStartMs', 0)
+            duration_ms = ev.get('dDurationMs', 0)
+            if duration_ms == 0:
+                continue
+            segs = ev.get('segs', [])
+            text = "".join([s.get('utf8', '') for s in segs if 'utf8' in s]).replace("\n", " ").strip()
+            if not text:
+                continue
+                
+            st = float(start_ms) / 1000.0
+            en = float(start_ms + duration_ms) / 1000.0
+            
+            if chunk_start < 0:
+                chunk_start = st
+            chunk_end = max(chunk_end, en)
+            current_chunk.append(text)
+            
+            if (chunk_end - chunk_start) >= 5.0:
+                segments.append({
+                    "start": chunk_start,
+                    "end": chunk_end,
+                    "text": " ".join(current_chunk)
+                })
+                current_chunk = []
+                chunk_start = -1.0
+                
+        if current_chunk:
+            segments.append({
+                "start": max(0.0, chunk_start),
+                "end": max(chunk_start + 1.0, chunk_end),
+                "text": " ".join(current_chunk)
+            })
+            
+        return segments
 
 
 def _get_url(data):
@@ -205,8 +315,6 @@ def get_ai_segments(data):
 
     try:
         _ensure_ai_deps()
-        if whisper_model:
-            set_whisper_model(whisper_model)
     except ValueError:
         raise
     except Exception as e:
@@ -214,16 +322,34 @@ def get_ai_segments(data):
 
     audio_path = None
     tmpdir = None
+    
+    # Method 1: Coba ambil subtitle (sangat cepat, hemat CPU)
+    print("Mencoba mengambil subtitle dari YouTube...")
+    try:
+        sub_segments = _fetch_youtube_subtitle(url, language)
+        if sub_segments and len(sub_segments) > 5:
+            print(f"Sukses mendapatkan {len(sub_segments)} segmen subtitle otomatis!")
+            segs = _build_ai_segments(sub_segments, duration_seconds=duration_seconds, limit=limit)
+            return {"ok": True, "segments": segs}
+    except Exception as e:
+        print(f"Gagal mengambil subtitle otomatis: {e}")
+
+    # Method 2: Fallback ke Gemini API
+    print("Subtitle tidak tersedia, menggunakan fallback Gemini API untuk audio...")
+    api_key = data.get("gemini_api_key")
+    if not api_key:
+        api_key = load_config().get("gemini_api_key")
+    
+    if not api_key:
+        raise ValueError("API Key Gemini belum diset. Silakan masukkan di pengaturan untuk menggunakan fitur Fallback Audio.")
+        
     try:
         audio_path, tmpdir = _download_audio_to_temp(url)
         try:
-            transcript_segments = transcribe_timestamped_segments(audio_path, language=language)
-        except ValueError:
-            raise
+            segs = process_audio_with_gemini(audio_path, api_key)
+            return {"ok": True, "segments": segs}
         except Exception as e:
-            raise ValueError(f"Gagal transcribe audio untuk backup AI: {type(e).__name__}: {str(e)}")
-        segs = _build_ai_segments(transcript_segments, duration_seconds=duration_seconds, limit=limit)
-        return {"ok": True, "segments": segs}
+            raise ValueError(f"Gagal memproses audio dengan Gemini: {str(e)}")
     finally:
         try:
             if tmpdir is not None:

@@ -401,23 +401,7 @@ def cek_dependensi(
             logger.emit("dep.skip", dep="yt_dlp", status="success", reason=reason)
 
         if install_whisper:
-            _pause_if_needed(logger, pause_file, dep="faster_whisper")
-            fw_ok = True
-            try:
-                import faster_whisper  # noqa: F401
-            except Exception:
-                fw_ok = False
-
-            if not fw_ok:
-                _run_pip(
-                    logger,
-                    dep="faster_whisper",
-                    args=["install", "faster-whisper", "--disable-pip-version-check", "--no-input", "--progress-bar", "off"],
-                    timeout_s=os.environ.get("YTCLIPPER_DEPS_PIP_TIMEOUT_S") or 900,
-                    verbose=verbose,
-                )
-            else:
-                logger.emit("dep.skip", dep="faster_whisper", status="success", reason="already_installed")
+            pass
 
         _pause_if_needed(logger, pause_file, dep="ffmpeg")
         ffmpeg_path = _get_ffmpeg_path()
