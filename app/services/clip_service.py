@@ -172,8 +172,13 @@ def _open_folder(path):
     if sys.platform == "darwin":
         subprocess.Popen(["open", path])
         return "open"
-    subprocess.Popen(["xdg-open", path])
-    return "xdg-open"
+    try:
+        subprocess.Popen(["xdg-open", path])
+        return "xdg-open"
+    except FileNotFoundError:
+        raise ValueError("Tidak dapat membuka folder secara otomatis dari dalam Docker/Server Linux. Silakan buka folder secara manual.")
+    except Exception as e:
+        raise ValueError("Gagal membuka folder: " + str(e))
 
 
 def normalize_output_dir(path: str) -> str:

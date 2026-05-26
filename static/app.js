@@ -353,62 +353,20 @@ let busyJob = false;
 
 let lastJobStatus = null;
 
-let openFolderDesiredState = { visible: false, disabled: true, title: 'Buka folder output (hasil clip).' };
-
-const getOpenFolderButtonState = (jobStatus, uiBusy) => {
-  try {
-    const fn = window.__ytclipper_computeOpenFolderButtonState;
-    if (typeof fn === 'function') return fn(jobStatus, uiBusy);
-  } catch {}
-
-  const js = jobStatus || null;
-  const busy = !!uiBusy;
-
-  if (!js || !js.done) {
-    return { visible: false, disabled: true, title: 'Buka folder output (hasil clip).' };
-  }
-
-  if (busy) {
-    return { visible: true, disabled: true, title: 'Tunggu sebentar, masih ada proses yang berjalan.' };
-  }
-
-  if (js.error) {
-    return { visible: true, disabled: true, title: 'Proses gagal, tidak ada folder output yang bisa dibuka.' };
-  }
-
-  if (!js.success_count || js.success_count <= 0) {
-    return { visible: true, disabled: true, title: 'Tidak ada clip yang berhasil dibuat.' };
-  }
-
-  if (!js.output_dir) {
-    return { visible: true, disabled: true, title: 'Output folder tidak tersedia.' };
-  }
-
-  if (js.output_dir_ok === false) {
-    return { visible: true, disabled: true, title: js.output_dir_error ? String(js.output_dir_error) : 'Folder output tidak bisa diakses.' };
-  }
-
-  return { visible: true, disabled: false, title: 'Buka folder output (hasil clip).' };
-};
-
-const applyOpenFolderDesiredState = () => {
-  const btn = $('openFolder');
+const syncDownloadButtons = () => {
+  const btn = $('btnShowResult');
+  const container = $('downloadContainer'); // legacy container, we hide it now
+  if (container) container.style.display = 'none';
   if (!btn) return;
-  btn.style.display = openFolderDesiredState.visible ? 'inline-flex' : 'none';
-  btn.disabled = !!openFolderDesiredState.disabled;
-  if (openFolderDesiredState.title) btn.title = String(openFolderDesiredState.title);
-};
 
-const setOpenFolderState = (patch) => {
-  openFolderDesiredState = { ...openFolderDesiredState, ...(patch || {}) };
-  applyOpenFolderDesiredState();
-};
-
-const syncOpenFolderButton = () => {
+  const js = lastJobStatus || null;
   const uiBusy = busyCount > 0 || !!busyJob;
-  const state = getOpenFolderButtonState(lastJobStatus, uiBusy);
-  setOpenFolderState(state);
-  return state;
+  
+  if (!js || !js.done || !js.files || js.files.length === 0 || uiBusy) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = 'inline-flex';
 };
 
 const getSegBulkButtonsState = (segs) => {
@@ -473,7 +431,7 @@ const updateBusyState = () => {
   else el.classList.remove('on');
   setUiDisabled(on);
   if (!on) syncSegBulkButtons();
-  if (!on) applyOpenFolderDesiredState();
+  if (!on) syncDownloadButtons();
 };
 
 const beginBusy = (title, msg) => {
@@ -503,7 +461,7 @@ const setBusyJob = (on, title, msg) => {
 };
 
 const setOpenFolderVisible = (on) => {
-  setOpenFolderState({ visible: !!on, disabled: !on, title: 'Buka folder output (hasil clip).' });
+  // deprecated
 };
 
 const setHeatmapLoading = (on) => {
@@ -561,8 +519,6 @@ const syncGeminiHint = () => {
 };
 
 const applyCfg = (cfg) => {
-  if (cfg.output_mode) document.querySelectorAll('input[name="outMode"]').forEach((r) => (r.checked = r.value === cfg.output_mode));
-  if (cfg.output_dir) $('outDir').value = cfg.output_dir;
   if (cfg.crop_mode) $('crop').value = cfg.crop_mode;
   if (cfg.crop_preview !== undefined && $('cropPrev')) $('cropPrev').checked = !!cfg.crop_preview;
   if (cfg.use_subtitle !== undefined) $('subOn').checked = !!cfg.use_subtitle;
@@ -576,14 +532,11 @@ const applyCfg = (cfg) => {
     $('geminiKey').placeholder = 'Tersimpan di server';
   }
   syncGeminiHint();
-  syncOutMode();
   syncSub();
   updateCropPreview();
 };
 
 const collectCfgLocal = () => ({
-  output_mode: document.querySelector('input[name="outMode"]:checked')?.value || 'default',
-  output_dir: $('outDir').value.trim(),
   crop_mode: $('crop').value,
   crop_preview: $('cropPrev') ? $('cropPrev').checked : true,
   use_subtitle: $('subOn').checked,
@@ -608,11 +561,7 @@ const persistCfg = async () => {
   } catch {}
 };
 
-const syncOutMode = () => {
-  const mode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
-  $('outDir').disabled = mode === 'default';
-  if (mode === 'default') $('outDir').placeholder = 'Default: ~/Videos/ClipAI';
-};
+
 
 const syncSub = () => {
   $('model').disabled = !$('subOn').checked;
@@ -634,10 +583,10 @@ const updateCropPreview = () => {
     const bottomY = topH;
     const bottomH = 25;
     const bottomX = mode === 'split_right' ? 100 - w : 0;
-    const shade = 'rgba(0,0,0,0.45)';
-    const stroke = 'rgba(72,208,255,0.92)';
-    const stroke2 = 'rgba(72,208,255,0.55)';
-    const sw = 0.85;
+    const shade = 'rgba(0,0,0,0.80)'; // Much darker to highlight the crop area
+    const stroke = 'rgba(6, 182, 212, 0.9)'; // Neon cyan
+    const stroke2 = 'rgba(139, 92, 246, 0.6)'; // Neon purple for split line
+    const sw = 0.5; // Thinner, more elegant line
 
     let holes = '';
     let frames = '';
@@ -649,7 +598,7 @@ const updateCropPreview = () => {
       frames = `
             <rect x="${xC}" y="0" width="${w}" height="${topH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
             <rect x="${bottomX}" y="${bottomY}" width="${w}" height="${bottomH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
-            <line x1="0" y1="${bottomY}" x2="100" y2="${bottomY}" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="3 2" />
+            <line x1="0" y1="${bottomY}" x2="100" y2="${bottomY}" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="2 1" />
           `;
     } else {
       holes = `M${xC} 0H${xC + w}V100H${xC}Z`;
@@ -657,8 +606,16 @@ const updateCropPreview = () => {
     }
 
     el.innerHTML = `
+          <defs>
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="0.5" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
           <path d="M0 0H100V100H0Z ${holes}" fill="${shade}" fill-rule="evenodd" />
-          ${frames}
+          <g filter="url(#glow)">
+            ${frames}
+          </g>
         `;
   });
 };
@@ -698,8 +655,10 @@ const renderSegs = () => {
           <td>${fmt(dur)}</td>
           <td>${score}</td>
           <td>
-            <button class="btn segPrev" data-idx="${idx}" title="Preview segmen (modal).">Preview</button>
-            <button class="btn danger segDel" data-idx="${idx}" title="Hapus segmen ini.">Del</button>
+            <div style="display:flex; gap:8px;">
+              <button class="btn segPrev" data-idx="${idx}" title="Preview segmen (modal).">Preview</button>
+              <button class="btn danger segDel" data-idx="${idx}" title="Hapus segmen ini.">Del</button>
+            </div>
           </td>
         `;
     tbody.appendChild(tr);
@@ -856,13 +815,7 @@ const validateUrl = () => {
   return u;
 };
 
-const validateOutDir = () => {
-  const mode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
-  if (mode === 'default') return null;
-  const p = $('outDir').value.trim();
-  if (!p) throw new Error('Output folder custom tidak boleh kosong.');
-  return p;
-};
+
 
 const validateSegments = () => {
   const segs = segments.filter((s) => s.enabled);
@@ -877,8 +830,6 @@ const validateSegments = () => {
 
 const fillSummary = () => {
   const segs = validateSegments();
-  const outMode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
-  const outDir = outMode === 'default' ? DEFAULT_OUTDIR : $('outDir').value.trim();
   const crop = $('crop').value;
   const subOn = $('subOn').checked;
   const model = $('model').value;
@@ -905,7 +856,7 @@ const fillSummary = () => {
     return box;
   };
 
-  top.appendChild(mkKv('Lokasi output', outDir || '-'));
+
   top.appendChild(mkKv('Crop mode', crop || '-'));
   top.appendChild(mkKv('Subtitle', subOn ? 'ON • Model: ' + model : 'OFF'));
   top.appendChild(mkKv('Total', segs.length + ' klip • ' + fmt(totalSec)));
@@ -1123,16 +1074,16 @@ const poll = async () => {
     }
 
     setLog(logText);
-    syncOpenFolderButton();
+    syncDownloadButtons();
     if (data.done) {
       clearInterval(pollTimer);
       pollTimer = null;
       setBusyJob(false);
-      syncOpenFolderButton();
+      syncDownloadButtons();
       if (data.error) {
         uiAlert('❌ Proses gagal!\n\n' + normText(data.error), { type: 'error', title: 'Proses gagal', modal: true });
       } else if (data.success_count > 0) {
-        uiAlert('✅ Selesai! ' + data.success_count + ' clip berhasil dibuat.\n\nOutput: ' + (data.output_dir || ''), { type: 'success', title: 'Selesai', modal: true });
+        showResultModal(data);
       }
     }
   } catch {}
@@ -1141,8 +1092,6 @@ const poll = async () => {
 const startJob = async () => {
   const url = validateUrl();
   const segs = validateSegments();
-  const outMode = document.querySelector('input[name="outMode"]:checked')?.value || 'default';
-  const outDir = outMode === 'default' ? null : validateOutDir();
   const useGemini = isGeminiSuggestionsOn();
   const payload = {
     url,
@@ -1152,12 +1101,12 @@ const startJob = async () => {
     whisper_model: $('model').value,
     subtitle_language: $('subLang') ? $('subLang').value : 'id',
     subtitle_position: $('subPos').value,
-    output_dir: outDir,
+    output_dir: null,
     use_gemini_suggestions: useGemini,
     gemini_api_key: useGemini ? $('geminiKey').value.trim() : null,
   };
   lastJobStatus = null;
-  setOpenFolderState({ visible: false, disabled: true, title: 'Tombol ini aktif setelah proses selesai.' });
+  syncDownloadButtons();
   setLog('🚀 Memulai proses...');
   setProgress(0, 'Memulai...', '', true);
   setBusyJob(true, 'Memproses clip...', 'Memulai...');
@@ -1306,11 +1255,7 @@ const closeModal = () => {
   $('modal').classList.remove('on');
 };
 
-document.querySelectorAll('input[name="outMode"]').forEach((r) => r.addEventListener('change', () => {
-  syncOutMode();
-  persistCfg();
-}));
-$('outDir').addEventListener('change', persistCfg);
+
 $('crop').addEventListener('change', () => {
   updateCropPreview();
   persistCfg();
@@ -1329,11 +1274,111 @@ $('geminiKey').addEventListener('change', () => {
   syncGeminiHint();
   persistCfg();
 });
-if ($('geminiOn'))
+if ($('geminiOn')) {
   $('geminiOn').addEventListener('change', () => {
     syncGeminiHint();
     persistCfg();
   });
+}
+
+const showResultModal = (data) => {
+  const modal = $('resultModal');
+  if (!modal) return;
+  
+  const subtext = $('resultModalSubtext');
+  const grid = $('resultGrid');
+  grid.innerHTML = '';
+  
+  const files = data.files || [];
+  if (files.length === 0) {
+    uiAlert('Proses selesai tapi tidak ada file hasil.', { type: 'warn' });
+    return;
+  }
+  
+  const btnDownloadAll = $('resultBtnDownloadAll');
+  if (btnDownloadAll) {
+    btnDownloadAll.style.display = files.length > 1 ? 'inline-flex' : 'none';
+  }
+  
+  subtext.textContent = 'Berhasil memproses ' + data.success_count + ' klip. Anda bisa melihat previewnya di bawah atau langsung mengunduhnya.';
+  
+  files.forEach((filename) => {
+    const url = apiUrl('/api/download/' + jobId + '/' + encodeURIComponent(filename));
+    
+    const div = document.createElement('div');
+    div.className = 'result-item';
+    
+    const title = document.createElement('div');
+    title.className = 'result-item-title';
+    title.textContent = filename;
+    
+    const vid = document.createElement('video');
+    vid.controls = true;
+    vid.preload = 'metadata';
+    vid.src = url;
+    
+    const acts = document.createElement('div');
+    acts.className = 'result-actions';
+    
+    const btnDl = document.createElement('a');
+    btnDl.className = 'btn primary';
+    btnDl.href = url;
+    btnDl.download = filename;
+    btnDl.target = '_blank';
+    btnDl.textContent = '⬇ Unduh Klip';
+    btnDl.style.textAlign = 'center';
+    btnDl.style.display = 'block';
+    
+    acts.appendChild(title);
+    acts.appendChild(btnDl);
+    div.appendChild(vid);
+    div.appendChild(acts);
+    grid.appendChild(div);
+  });
+  
+  modal.classList.add('on');
+};
+
+$('btnShowResult')?.addEventListener('click', () => {
+  if (lastJobStatus) showResultModal(lastJobStatus);
+});
+
+$('closeResultModal')?.addEventListener('click', () => {
+  $('resultModal').classList.remove('on');
+  // Stop all videos playing
+  $('resultGrid').querySelectorAll('video').forEach(v => { try { v.pause(); } catch {} });
+});
+
+$('resultBtnNew')?.addEventListener('click', () => {
+  $('resultModal').classList.remove('on');
+  $('resultGrid').querySelectorAll('video').forEach(v => { try { v.pause(); } catch {} });
+  $('url').value = '';
+  segments = [];
+  activeSegIdx = null;
+  lastJobStatus = null;
+  jobId = null;
+  setLog('');
+  $('bar').style.width = '0%';
+  $('status').textContent = 'Idle';
+  $('eta').textContent = '';
+  syncDownloadButtons();
+  renderSegs();
+});
+
+$('resultBtnDownloadAll')?.addEventListener('click', () => {
+  if (!lastJobStatus || !lastJobStatus.files) return;
+  // Fallback if no zip endpoint: just trigger download for all
+  lastJobStatus.files.forEach((f) => {
+    const a = document.createElement('a');
+    a.href = apiUrl('/api/download/' + jobId + '/' + encodeURIComponent(f));
+    a.download = f;
+    a.target = '_blank';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 100);
+  });
+});
 
 const updateManualDur = (clamp = false) => {
   const st = parseInt(($('sStart').value || '').trim(), 10);
@@ -1465,47 +1510,7 @@ $('go').addEventListener('click', async () => {
   }
 });
 
-const _openFolderBtn = $('openFolder');
-if (_openFolderBtn)
-  _openFolderBtn.addEventListener('click', async (ev) => {
-  try {
-    ev.preventDefault();
-  } catch {}
-  if (!jobId) {
-    const msg = 'Job belum ada. Tombol ini aktif setelah proses selesai.';
-    appendLog('[openFolder] ' + msg);
-    try {
-      console.warn(msg);
-    } catch {}
-    uiAlert(msg, { type: 'info' });
-    return;
-  }
-  try {
-    await runWithBusy('Membuka folder...', 'Menyiapkan folder output...', async () => {
-      appendLog('[openFolder] Request /api/open_output/' + jobId);
-      const res = await fetch(apiUrl('/api/open_output/') + jobId, { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch {
-        const t = await res.text().catch(() => '');
-        throw new Error('Response tidak valid (bukan JSON). ' + (t ? '\n' + t.slice(0, 200) : ''));
-      }
-      if (!data || !data.ok) throw new Error(data && data.error ? data.error : 'Gagal membuka folder output.');
-      appendLog('[openFolder] OK ' + (data.output_dir ? '→ ' + data.output_dir : ''));
-      try {
-        console.log('openFolder OK', data);
-      } catch {}
-    });
-  } catch (e) {
-    const msg = e && e.message ? e.message : String(e);
-    appendLog('[openFolder] ERROR ' + msg);
-    try {
-      console.error(e);
-    } catch {}
-    uiAlert(msg, { type: 'error' });
-  }
-  });
+// Removed openFolder event listener
 
 $('timeline').addEventListener('input', () => {
   const v = parseInt($('timeline').value || '0', 10);
@@ -1594,6 +1599,76 @@ $('segClose').addEventListener('click', () => {
   destroySegPlayer();
 });
 
+let shortsPlayers = [];
+
+const destroyShortsPlayers = () => {
+  shortsPlayers.forEach(p => {
+    try { if (p && p.destroy) p.destroy(); } catch {}
+  });
+  shortsPlayers = [];
+  const c = $('shortsContainer');
+  if (c) c.innerHTML = '';
+};
+
+$('closeShortsModal').addEventListener('click', () => {
+  $('shortsModal').classList.remove('on');
+  destroyShortsPlayers();
+});
+
+$('btnSimulateShorts').addEventListener('click', async () => {
+  if (!currentVideoId) {
+    uiAlert('Mohon load video terlebih dahulu.', { type: 'warn' });
+    return;
+  }
+  if (!playerReady || !player || !player.getCurrentTime) return;
+  
+  const ct = player.getCurrentTime();
+  player.pauseVideo();
+  
+  $('shortsModal').classList.add('on');
+  destroyShortsPlayers();
+  
+  const mode = ($('crop')?.value || 'default').trim();
+  const c = $('shortsContainer');
+  
+  await ensureYTApi();
+  
+  const createPlayer = (boxClass, ifClass, isMuted) => {
+    const box = document.createElement('div');
+    box.className = `shorts-crop-box ${boxClass}`;
+    
+    const ifHolder = document.createElement('div');
+    ifHolder.className = `shorts-iframe ${ifClass}`;
+    box.appendChild(ifHolder);
+    c.appendChild(box);
+    
+    const p = new YT.Player(ifHolder, {
+      videoId: currentVideoId,
+      playerVars: { controls: 0, rel: 0, modestbranding: 1, fs: 0, disablekb: 1, start: Math.floor(ct), mute: isMuted ? 1 : 0 },
+      events: {
+        onReady: (e) => {
+          const iframe = e.target.getIframe();
+          if (iframe) iframe.className = `shorts-iframe ${ifClass}`;
+          if (isMuted) { try { e.target.mute(); } catch {} }
+          try { e.target.playVideo(); } catch {}
+          try { e.target.seekTo(ct, true); } catch {}
+        }
+      }
+    });
+    shortsPlayers.push(p);
+    return p;
+  };
+  
+  if (mode === 'split_left' || mode === 'split_right') {
+    createPlayer('shorts-box-top', 'shorts-if-top', false);
+    createPlayer('shorts-box-bottom', mode === 'split_left' ? 'shorts-if-bottom-left' : 'shorts-if-bottom-right', true);
+  } else if (mode === 'fit') {
+    createPlayer('shorts-box-fit', 'shorts-if-fit', false);
+  } else {
+    createPlayer('shorts-box-default', 'shorts-if-default', false);
+  }
+});
+
 window.onYouTubeIframeAPIReady = function () {
   playerReady = true;
 };
@@ -1663,4 +1738,7 @@ const loadPlayer = (videoId) => {
   syncRangeFill($('timeline'));
   renderSegs();
   updateBusyState();
+  
+  // Clean up old output files
+  fetch(apiUrl('/api/clean'), { method: 'POST' }).catch(() => {});
 })();

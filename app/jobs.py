@@ -2,6 +2,7 @@ import contextlib
 import threading
 import time
 
+import os
 from app.clipper import format_hhmmss, proses_dengan_segmen
 
 
@@ -62,6 +63,7 @@ def create_job(job_id, output_dir):
         "created_at": time.time(),
         "output_dir": output_dir,
         "success_count": 0,
+        "files": [],
     }
 
     with _JOBS_LOCK:
@@ -153,6 +155,7 @@ def run_job(job_id, payload):
                 eta="",
                 output_dir=result.get("output_dir"),
                 success_count=result.get("success_count", 0),
+                files=[os.path.basename(f) for f in result.get("files", [])],
             )
         except Exception as e:
             import traceback

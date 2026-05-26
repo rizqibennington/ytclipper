@@ -1,8 +1,10 @@
+import os
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from app.jobs import get_job
-from app.schemas import JobStatusResponse, OpenOutputResponse, StartJobRequest, StartJobResponse
-from app.services.clip_service import inspect_output_dir, open_output_folder, start_clip_job
+from app.schemas import JobStatusResponse, StartJobRequest, StartJobResponse
+from app.services.clip_service import inspect_output_dir, start_clip_job
 
 
 router = APIRouter()
@@ -47,12 +49,26 @@ def status(job_id: str):
         "output_dir_error": out_err,
         "success_count": int(job.get("success_count", 0)),
         "logs": logs,
+        "files": job.get("files", []),
     }
 
 
-@router.post("/open_output/{job_id}", response_model=OpenOutputResponse)
-def open_output(job_id: str):
-    try:
-        return open_output_folder(job_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+@router.get("/download/{job_id}/{filename}")
+def download_file(job_id: str, filename: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+    
+    files = job.get("files", [])
+    if filename not in files:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan atau tidak diizinkan")
+    
+    output_dir = job.get("output_dir")
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="Output directory tidak ada")
+        
+    file_path = os.path.join(output_dir, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File fisik tidak ditemukan di server")
+        
+    return FileResponse(path=file_path, filename=filename, media_type="video/mp4")

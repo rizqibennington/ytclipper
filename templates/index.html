@@ -6,14 +6,18 @@
   <title>YTClipper</title>
   <meta name="application-name" content="YTClipper" />
   <meta name="apple-mobile-web-app-title" content="YTClipper" />
-  <meta name="theme-color" content="#0b0f14" />
+  <meta name="theme-color" content="#09090b" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2214%22%20rx%3D%223%22%20fill%3D%22%23111824%22%20stroke%3D%22%2348d0ff%22%20stroke-width%3D%221.6%22/%3E%3Cpath%20d%3D%22M10%209v6l6-3z%22%20fill%3D%22%2348d0ff%22/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="static/styles.css" />
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=1.5" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="grid">
+      <div class="col-left">
       <div class="card">
         <h2>
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -82,6 +86,15 @@
               <span>Play Preview</span>
             </span>
           </button>
+          <button class="btn primary" id="btnSimulateShorts" title="Simulasikan tampilan 9:16 di layar HP">
+            <span class="btnLabel">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+              </svg>
+              <span>Simulasi Shorts</span>
+            </span>
+          </button>
         </div>
         <div style="height:10px"></div>
         <label title="Timeline untuk navigasi preview.">Timeline</label>
@@ -124,7 +137,9 @@
           <tbody></tbody>
         </table>
       </div>
+      </div>
 
+      <div class="col-right">
       <div class="card">
         <h2>
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -140,14 +155,8 @@
           </svg>
           Output & Subtitle
         </h2>
-        <div class="muted" style="margin:-6px 0 12px 0">Atur folder output, mode crop, dan opsi subtitle.</div>
-        <label title="Default: ~/Videos/ClipAI atau custom path di PC ini.">Lokasi Output</label>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;flex:0 0 auto;" title="Pakai default folder."><input type="radio" name="outMode" value="default" checked /> Default</label>
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;flex:0 0 auto;" title="Tulis path folder custom."><input type="radio" name="outMode" value="custom" /> Custom</label>
-          <input id="outDir" type="text" placeholder="C:\\path\\to\\folder" title="Folder output di mesin ini." style="flex:1;min-width:200px;" />
-        </div>
-        <div style="height:10px"></div>
+        <div class="muted" style="margin:-6px 0 12px 0">Atur mode crop, dan opsi subtitle.</div>
+
         <label title="Masukkan Gemini API Key untuk fitur saran Judul & Caption (Opsional).">Gemini API Key (AI Title & Caption)</label>
         <input id="geminiKey" type="password" placeholder="AIzaSy..." title="API Key dari Google AI Studio." autocomplete="off" />
         <label style="display:block;margin-top:10px;" title="Kalau Tidak, aplikasi tidak akan generate saran judul/caption otomatis walaupun API key ada.">Generate saran AI (judul & caption)</label>
@@ -254,15 +263,17 @@
               <span>Review & Proses</span>
             </span>
           </button>
-          <button class="btn" id="openFolder" type="button" title="Buka folder output (hasil clip)." style="display:none">
+          <button class="btn" id="btnShowResult" title="Lihat hasil klip terakhir" style="display:none">
             <span class="btnLabel">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
-                <path d="M3 7V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2"></path>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              <span>Lihat Folder</span>
+              <span>Hasil Terakhir</span>
             </span>
           </button>
+          <div id="downloadContainer" style="display:none; flex-direction:column; gap:8px; flex:1"></div>
         </div>
         <div style="height:12px"></div>
         <div class="progress"><div class="bar" id="bar"></div></div>
@@ -271,6 +282,7 @@
           <div class="muted" id="eta" style="text-align:right"></div>
         </div>
         <pre id="log" class="mono"></pre>
+      </div>
       </div>
     </div>
   </div>
@@ -400,13 +412,42 @@
     </div>
   </div>
 
+  <!-- Modal Simulasi Shorts -->
+  <div class="modal" id="shortsModal">
+    <div class="box" style="width: 380px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+      <div style="padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5);">
+        <h3 style="margin: 0; font-size: 16px;">Simulasi Shorts</h3>
+        <button id="closeShortsModal" class="btn" style="padding: 6px 10px; border-radius: 8px;">✕</button>
+      </div>
+      <div style="flex: 1; overflow: hidden; background: #000; position: relative;" id="shortsContainer"></div>
+    </div>
+  </div>
+
+  <!-- Result Modal -->
+  <div class="modal" id="resultModal">
+    <div class="box" style="width: 800px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+      <div style="padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5);">
+        <h3 style="margin: 0; font-size: 18px; color: var(--accent);">🎉 Proses Selesai!</h3>
+        <button id="closeResultModal" class="btn" style="padding: 6px 10px; border-radius: 8px;">✕</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto; padding: 20px;">
+        <div class="muted" style="margin-bottom: 20px" id="resultModalSubtext"></div>
+        <div class="result-grid" id="resultGrid"></div>
+      </div>
+      <div style="padding: 15px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn" id="resultBtnNew">Buat Baru</button>
+        <button class="btn primary" id="resultBtnDownloadAll">Unduh Semua (ZIP)</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     window.__YTCLIPPER_BASE__ = "{{ request.scope.get('root_path','') or '' }}";
     window.__YTCLIPPER_DEFAULT_OUTDIR__ = "{{ default_output_dir }}";
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="static/seg_bulk_buttons_state.js"></script>
-  <script src="static/open_folder_state.js"></script>
-  <script src="static/app.js"></script>
+  <script src="{{ url_for('static', path='seg_bulk_buttons_state.js') }}"></script>
+  <script src="{{ url_for('static', path='open_folder_state.js') }}"></script>
+  <script src="{{ url_for('static', path='app.js') }}?v=1.5"></script>
 </body>
 </html>

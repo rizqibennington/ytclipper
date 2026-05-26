@@ -18,16 +18,11 @@ class JobStatusResponse(BaseModel):
     output_dir_error: str | None = None
     success_count: int | None = None
     logs: str | None = None
-
-
-class OpenOutputResponse(OkResponse):
-    output_dir: str
-    method: str
+    files: list[str] = []
 
 
 __all__ = [
     "StartJobRequest",
     "StartJobResponse",
     "JobStatusResponse",
-    "OpenOutputResponse",
 ]

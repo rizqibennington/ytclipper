@@ -482,7 +482,7 @@ def proses_satu_clip(
                 print(f"⚠️ [AI Error] {str(e)}")
 
         print(f"✅ Clip #{index} selesai → {os.path.basename(output_file)}")
-        return True, None
+        return True, output_file
     except subprocess.CalledProcessError as e:
         print(f"❌ [ERROR] Clip #{index} gagal (crop_mode={crop_mode})")
         err_msg = str(e)
@@ -571,9 +571,10 @@ def proses_dengan_segmen(
 
     success = 0
     errors = []
+    generated_files = []
     for seg in cleaned:
         item = {"start": seg["start"], "end": seg["end"]}
-        ok, err = proses_satu_clip(
+        ok, res = proses_satu_clip(
             video_id=video_id,
             item=item,
             index=success + 1,
@@ -590,8 +591,10 @@ def proses_dengan_segmen(
         )
         if ok:
             success += 1
-        elif err:
-            errors.append(err)
+            if res:
+                generated_files.append(res)
+        elif res:
+            errors.append(res)
 
     if success == 0:
         if skipped > 0 and not errors:
@@ -604,4 +607,4 @@ def proses_dengan_segmen(
             msg += f"\nDetail error: {'; '.join(unique_errors)}"
         raise RuntimeError(msg)
 
-    return {"success_count": success, "output_dir": output_dir}
+    return {"success_count": success, "output_dir": output_dir, "files": generated_files}

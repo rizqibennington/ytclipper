@@ -41,3 +41,24 @@ def set_config(data: ConfigUpdateRequest):
         cfg[k] = v
     save_config(cfg)
     return {"ok": True}
+
+from fastapi import BackgroundTasks
+import os
+
+def do_clean():
+    cfg = load_config()
+    output_dir = cfg.get("output_dir", default_output_dir())
+    
+    if os.path.isdir(output_dir):
+        for fname in os.listdir(output_dir):
+            if fname.lower().endswith('.mp4'):
+                fpath = os.path.join(output_dir, fname)
+                try:
+                    os.remove(fpath)
+                except Exception:
+                    pass
+
+@router.post("/clean", response_model=OkResponse)
+def clean_outputs(background_tasks: BackgroundTasks):
+    background_tasks.add_task(do_clean)
+    return {"ok": True}

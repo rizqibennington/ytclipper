@@ -2,7 +2,7 @@ from app.schemas.ai import AiSegmentsRequest, AiSegmentsResponse, GeminiSuggesti
 from app.schemas.base import ErrorResponse, OkResponse
 from app.schemas.config import ConfigResponse, ConfigUpdateRequest
 from app.schemas.heatmap import HeatmapRequest, HeatmapResponse, ScoredSegment, Segment
-from app.schemas.jobs import JobStatusResponse, OpenOutputResponse, StartJobRequest, StartJobResponse
+from app.schemas.jobs import JobStatusResponse, StartJobRequest, StartJobResponse
 from app.schemas.video import VideoInfoRequest, VideoInfoResponse
 
 
@@ -22,7 +22,6 @@ __all__ = [
     "StartJobRequest",
     "StartJobResponse",
     "JobStatusResponse",
-    "OpenOutputResponse",
     "VideoInfoRequest",
     "VideoInfoResponse",
 ]
