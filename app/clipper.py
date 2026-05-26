@@ -118,10 +118,10 @@ def proses_satu_clip(
     ]
 
     player_client_candidates = [
-        "default,tv_simply,mweb,web_safari",
-        "tv,mweb",
+        "web_creator,tv_embedded,mweb",
+        "tv_simply,mweb",
         "web_safari,mweb",
-        "default",
+        "tv,mweb",
     ]
 
     try:
@@ -190,6 +190,8 @@ def proses_satu_clip(
                     "-f",
                     fmt,
                     "--restrict-filenames",
+                    "--js-runtimes",
+                    "node",
                 ] + get_yt_dlp_cookies_args() + [
                     "-o",
                     out_tpl,
@@ -214,12 +216,14 @@ def proses_satu_clip(
                 "--no-warnings",
                 "--no-playlist",
                 "--extractor-args",
-                "youtube:player_client=default,tv_simply,mweb,web_safari",
+                "youtube:player_client=web_creator,tv_embedded,mweb",
                 "--download-sections",
                 f"*{start}-{end}",
                 "-f",
                 "bv*+ba/b/best",
                 "--restrict-filenames",
+                "--js-runtimes",
+                "node",
             ] + get_yt_dlp_cookies_args() + [
                 "-o",
                 out_tpl,
