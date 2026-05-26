@@ -16,33 +16,21 @@ def normalize_youtube_url(url):
     u = u.strip("` \\t\\r\\n\"'")
     if not u:
         return ""
-    parsed = urlparse(u)
-    video_id = None
-    if parsed.hostname in ("youtu.be", "www.youtu.be"):
-        video_id = parsed.path.strip("/").split("/")[0]
-    elif parsed.hostname in ("youtube.com", "www.youtube.com", "m.youtube.com"):
-        if parsed.path == "/watch":
-            video_id = parse_qs(parsed.query).get("v", [None])[0]
-        elif parsed.path.startswith("/shorts/") or parsed.path.startswith("/embed/"):
-            parts = [p for p in parsed.path.split("/") if p]
-            if len(parts) >= 2:
-                video_id = parts[1]
-    elif _YOUTUBE_ID_RE.match(u):
-        video_id = u
-    if video_id:
-        video_id = str(video_id).strip().strip("` \\t\\r\\n\"'")
-        if _YOUTUBE_ID_RE.match(video_id):
-            return f"https://youtu.be/{video_id}"
+    m = re.search(r"(?:v=|/)([0-9A-Za-z_-]{11})(?:\?|&|/|$)", u)
+    if m:
+        video_id = m.group(1)
+        return f"https://youtu.be/{video_id}"
     return u
 
-
 def extract_youtube_video_id(url):
-    normalized = normalize_youtube_url(url)
-    parsed = urlparse(normalized)
-    if parsed.hostname in ("youtu.be", "www.youtu.be"):
-        video_id = parsed.path.strip("/").split("/")[0]
-        if _YOUTUBE_ID_RE.match(video_id or ""):
-            return video_id
+    u = str(url or "").strip()
+    u = re.sub(r"[`\\s\"']*(https?://[^`\\s\"']+)[`\\s\"']*", r"\1", u)
+    u = u.strip("` \\t\\r\\n\"'")
+    m = re.search(r"(?:v=|/)([0-9A-Za-z_-]{11})(?:\?|&|/|$)", u)
+    if m:
+        return m.group(1)
+    if _YOUTUBE_ID_RE.match(u):
+        return u
     return None
 
 def get_cookies_path():

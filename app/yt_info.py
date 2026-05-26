@@ -42,9 +42,8 @@ def get_duration(video_id):
         "--quiet",
         "--no-warnings",
         "--no-playlist",
-        "--force-ipv4",
         "--extractor-args",
-        "youtube:player_client=default,tv_simply,mweb,web_safari",
+        "youtube:player_client=ios,android,web_creator",
     ] + get_yt_dlp_cookies_args() + [
         "--get-duration",
         f"https://youtu.be/{video_id}",
