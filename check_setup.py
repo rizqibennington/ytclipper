@@ -14,10 +14,10 @@ def check_ffmpeg():
             stderr=subprocess.DEVNULL,
             check=True
         )
-        print("✅ FFmpeg is installed and recognized.")
+        print("[OK] FFmpeg is installed and recognized.")
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
-        print("❌ FFmpeg NOT found in PATH.")
+        print("[FAIL] FFmpeg NOT found in PATH.")
         print("   -> Please install FFmpeg and add it to your system PATH.")
         return False
 
@@ -30,14 +30,14 @@ def check_library(package_name, import_name=None):
         
     try:
         __import__(import_name)
-        print(f"✅ Library '{package_name}' is installed.")
+        print(f"[OK] Library '{package_name}' is installed.")
         return True
     except ImportError:
-        print(f"⚠️  Library '{package_name}' is NOT installed.")
+        print(f"[WARN] Library '{package_name}' is NOT installed.")
         return False
 
 def main():
-    print("--- 🩺 Checking System Environment ---\n")
+    print("--- [INFO] Checking System Environment ---\n")
     
     # 1. Check FFmpeg
     ffmpeg_ok = check_ffmpeg()
@@ -61,10 +61,10 @@ def main():
     print("\n" + "="*40)
     
     if ffmpeg_ok and all_packages_ok:
-        print("🎉 GREAT! Your system is ready.")
+        print("[SUCCESS] GREAT! Your system is ready.")
         print("   You can now run: python run.py")
     else:
-        print("❌ SETUP INCOMPLETE.")
+        print("[ERROR] SETUP INCOMPLETE.")
         if not ffmpeg_ok:
             print("   - You need to install FFmpeg.")
         if not all_packages_ok:

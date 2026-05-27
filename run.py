@@ -8,8 +8,8 @@ if __name__ == "__main__":
     debug = bool(settings.debug)
     host = str(settings.host)
     port = int(settings.port)
-    print(f"🚀 Server running at http://{host}:{port}")
-    print(f"🔥 Hot reload: {'ON' if debug else 'OFF'} (set DEBUG=0 to disable)")
+    print(f"Server running at http://{host}:{port}")
+    print(f"Hot reload: {'ON' if debug else 'OFF'} (set DEBUG=0 to disable)")
     target = "app.main:app" if debug else "app.main:app"
     # Enable proxy headers for correct IP and scheme behind Nginx
     uvicorn.run(target, host=host, port=port, reload=debug, proxy_headers=True, forwarded_allow_ips="*")
