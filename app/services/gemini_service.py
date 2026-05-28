@@ -120,7 +120,7 @@ def process_audio_with_gemini(audio_path, api_key):
         )
         
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=[uploaded_file, prompt],
             config=cfg
         )

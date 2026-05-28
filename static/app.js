@@ -1160,7 +1160,15 @@ const loadHeatmap = async () => {
 
   const tInfo0 = performance.now();
   const infoRes = await fetch(apiUrl('/api/video_info'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-  const infoData = await infoRes.json();
+  
+  let infoData;
+  const infoText = await infoRes.text();
+  try {
+    infoData = JSON.parse(infoText);
+  } catch (e) {
+    throw new Error(`Server error (${infoRes.status}): Gagal mem-parsing response video_info.`);
+  }
+  
   if (!infoData.ok) throw new Error(infoData.error || 'Gagal load info');
   const tInfoMs = performance.now() - tInfo0;
 
@@ -1182,7 +1190,15 @@ const loadHeatmap = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, debug: heatmapDebug }),
     });
-    const data = await res.json();
+    
+    let data;
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Server error (${res.status}): Gagal mem-parsing response heatmap.`);
+    }
+    
     const tHmMs = performance.now() - tHm0;
     if (!data.ok) throw new Error(data.error || 'Gagal load heatmap');
     segments = data.segments || [];
@@ -1213,7 +1229,15 @@ const loadHeatmap = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, duration_seconds: infoData.duration_seconds, whisper_model: $('model').value, language: ($('subLang') ? $('subLang').value : 'id') }),
     });
-    const data = await res.json();
+    
+    let data;
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Server error (${res.status}): Gagal mem-parsing response AI segments.`);
+    }
+    
     if (!data.ok) throw new Error(data.error || 'Gagal generate AI segments');
     segments = data.segments || [];
     enforceAllSegments('AI');
