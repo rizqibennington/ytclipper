@@ -15,7 +15,7 @@ def ai_segments(data: AiSegmentsRequest):
         job_id = uuid.uuid4().hex[:12]
         create_job(job_id, output_dir=None)
         start_ai_job(job_id, data.model_dump(exclude_none=True))
-        return {"ok": True, "job_id": job_id}
+        return {"ok": True, "job_id": job_id, "estimated_bytes": 0}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
