@@ -50,6 +50,7 @@ def status(job_id: str):
         "success_count": int(job.get("success_count", 0)),
         "logs": logs,
         "files": job.get("files", []),
+        "segments": job.get("segments", []),
     }
 
 

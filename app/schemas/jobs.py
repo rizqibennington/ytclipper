@@ -19,6 +19,7 @@ class JobStatusResponse(BaseModel):
     success_count: int | None = None
     logs: str | None = None
     files: list[str] = []
+    segments: list[dict] | None = None
 
 
 __all__ = [

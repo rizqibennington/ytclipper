@@ -64,6 +64,7 @@ def create_job(job_id, output_dir):
         "output_dir": output_dir,
         "success_count": 0,
         "files": [],
+        "segments": [],
     }
 
     with _JOBS_LOCK:
@@ -168,5 +169,44 @@ def run_job(job_id, payload):
 
 def start_job(job_id, payload):
     t = threading.Thread(target=run_job, args=(job_id, payload), daemon=True)
+    t.start()
+    return t
+
+
+def run_ai_job(job_id, payload):
+    from app.services.ai_service import get_ai_segments
+    
+    update_job(job_id, running=True, percent=10.0, stage="download", status="⬇️ Download/Processing Audio...", eta="", error=None)
+
+    writer = JobWriter(job_id)
+    with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
+        print(f"🤖 Memulai analisis AI segments...")
+        try:
+            result = get_ai_segments(payload)
+            if not result.get("ok"):
+                raise ValueError(result.get("error", "Gagal mendapatkan AI segments"))
+            
+            segs = result.get("segments", [])
+            update_job(
+                job_id,
+                running=False,
+                done=True,
+                percent=100.0,
+                stage="done",
+                status="Selesai",
+                eta="",
+                segments=segs,
+            )
+            print(f"✅ Selesai. Mendapatkan {len(segs)} segmen.")
+        except Exception as e:
+            import traceback
+            error_detail = f"{type(e).__name__}: {str(e)}"
+            print(f"\n[FATAL ERROR] {error_detail}")
+            print(traceback.format_exc())
+            update_job(job_id, running=False, done=True, percent=0.0, stage="error", status="Error", eta="", error=error_detail)
+
+
+def start_ai_job(job_id, payload):
+    t = threading.Thread(target=run_ai_job, args=(job_id, payload), daemon=True)
     t.start()
     return t

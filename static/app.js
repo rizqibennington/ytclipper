@@ -1238,8 +1238,30 @@ const loadHeatmap = async () => {
       throw new Error(`Server error (${res.status}): Gagal mem-parsing response AI segments.`);
     }
     
-    if (!data.ok) throw new Error(data.error || 'Gagal generate AI segments');
-    segments = data.segments || [];
+    if (!data.ok) throw new Error(data.error || 'Gagal memulai job AI segments');
+    
+    const aiJobId = data.job_id;
+    let aiJobDone = false;
+    let aiSegments = [];
+    
+    while (!aiJobDone) {
+      await new Promise(r => setTimeout(r, 1000));
+      const sRes = await fetch(apiUrl('/api/status/') + aiJobId);
+      const sData = await sRes.json();
+      if (!sData.ok) continue;
+      
+      if (sData.status) {
+         setBusyText('Backup AI...', sData.status);
+      }
+      
+      if (sData.done) {
+        aiJobDone = true;
+        if (sData.error) throw new Error(sData.error);
+        aiSegments = sData.segments || [];
+      }
+    }
+    
+    segments = aiSegments;
     enforceAllSegments('AI');
     if (!segments.length) throw new Error('AI segments kosong: transcript tidak cukup jelas, atau analisis gagal.');
     segments.sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0) || (a.start | 0) - (b.start | 0) || (a.end | 0) - (b.end | 0));
