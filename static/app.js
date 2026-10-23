@@ -1769,6 +1769,186 @@ const loadPlayer = (videoId) => {
   });
 };
 
+
+async function refreshCookiesStatus() {
+  const badge = $('cookieBadge');
+  const msg = $('cookieStatusMsg');
+  const delBtn = $('deleteCookieBtn');
+  if (!badge) return;
+
+  try {
+    const res = await fetch(apiUrl('/api/cookies'));
+    const data = await res.json();
+    if (!data.ok || !data.status) throw new Error('Status tidak valid');
+    const st = data.status;
+
+    if (st.installed) {
+      badge.textContent = `✅ Terpasang (${st.line_count} cookies)`;
+      badge.style.background = 'rgba(34, 197, 94, 0.2)';
+      badge.style.color = '#4ade80';
+      badge.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+      if (msg) {
+        const kb = (st.size_bytes / 1024).toFixed(1);
+        msg.textContent = `File: ${st.path} (${kb} KB, ${st.line_count} baris). Siap digunakan untuk download di server.`;
+      }
+      if (delBtn) delBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '⚠️ Belum Terpasang';
+      badge.style.background = 'rgba(245, 158, 11, 0.2)';
+      badge.style.color = '#fbbf24';
+      badge.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+      if (msg) {
+        msg.textContent = 'Belum ada cookies.txt. Server VPS/Docker butuh cookies agar download YouTube tidak diblokir bot check.';
+      }
+      if (delBtn) delBtn.style.display = 'none';
+    }
+  } catch (err) {
+    badge.textContent = '❓ Gagal Cek';
+    badge.style.background = 'rgba(239, 68, 68, 0.2)';
+    badge.style.color = '#f87171';
+    if (msg) msg.textContent = 'Gagal memuat status cookies: ' + err.message;
+    if (delBtn) delBtn.style.display = 'none';
+  }
+}
+
+async function saveCookiesToServer(content) {
+  try {
+    const res = await fetch(apiUrl('/api/cookies'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies: content }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || data.detail || 'Gagal menyimpan cookies');
+    uiAlert(data.message || 'Cookies berhasil disimpan!', { type: 'success' });
+    await refreshCookiesStatus();
+  } catch (err) {
+    uiAlert('Gagal simpan cookies: ' + err.message, { type: 'error' });
+  }
+}
+
+function initCookiesManager() {
+  const uploadBtn = $('uploadCookieBtn');
+  const fileInput = $('cookieFileInput');
+  const pasteBtn = $('pasteCookieBtn');
+  const deleteBtn = $('deleteCookieBtn');
+  const helpBtn = $('cookieHelpBtn');
+
+  if (uploadBtn && fileInput) {
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const text = evt.target.result;
+        await saveCookiesToServer(text);
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  if (pasteBtn) {
+    pasteBtn.addEventListener('click', async () => {
+      const Swal = window.Swal;
+      if (!Swal) {
+        const text = prompt('Paste teks Netscape cookies.txt di sini:');
+        if (text) await saveCookiesToServer(text);
+        return;
+      }
+      const { value: text } = await Swal.fire({
+        title: 'Paste Isi cookies.txt',
+        input: 'textarea',
+        inputLabel: 'Paste teks cookies format Netscape (dimulai dari # Netscape HTTP Cookie File atau baris domain):',
+        inputPlaceholder: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t...',
+        showCancelButton: true,
+        confirmButtonText: 'Simpan Cookies',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#8b5cf6',
+        background: '#111824',
+        color: '#e8edf2',
+      });
+      if (text) {
+        await saveCookiesToServer(text);
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      const Swal = window.Swal;
+      let confirmed = false;
+      if (Swal) {
+        const res = await Swal.fire({
+          title: 'Hapus cookies.txt?',
+          text: 'Setelah dihapus, server production mungkin akan diblokir oleh YouTube dengan bot check.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Ya, Hapus',
+          cancelButtonText: 'Batal',
+          confirmButtonColor: '#ef4444',
+          background: '#111824',
+          color: '#e8edf2',
+        });
+        confirmed = res.isConfirmed;
+      } else {
+        confirmed = confirm('Yakin ingin menghapus cookies.txt?');
+      }
+
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch(apiUrl('/api/cookies'), { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Gagal menghapus cookies');
+        uiAlert('Cookies YouTube berhasil dihapus', { type: 'success' });
+        await refreshCookiesStatus();
+      } catch (err) {
+        uiAlert('Gagal menghapus cookies: ' + err.message, { type: 'error' });
+      }
+    });
+  }
+
+  if (helpBtn) {
+    helpBtn.addEventListener('click', () => {
+      const Swal = window.Swal;
+      const htmlContent = `
+        <div style="text-align:left; font-size:13px; line-height:1.6; color:#e4e4e7;">
+          <p><strong>Kenapa butuh cookies?</strong><br>
+          YouTube memblokir IP server Datacenter (VPS) dengan pesan <em>"Sign in to confirm you're not a bot"</em>. Cookies membuktikan bahwa request berasal dari akun terverifikasi.</p>
+          <hr style="border-color:rgba(255,255,255,0.1); margin:10px 0;">
+          <p><strong>Langkah mendapatkan cookies.txt:</strong></p>
+          <ol style="padding-left:18px; margin:0 0 10px 0;">
+            <li>Pasang ekstensi browser di Chrome / Firefox:
+              <br>• <strong>Get cookies.txt LOCALLY</strong> atau <strong>Cookie-Editor</strong>
+            </li>
+            <li>Buka <a href="https://www.youtube.com" target="_blank" style="color:#a78bfa;">youtube.com</a> (pastikan sudah login akun YouTube).</li>
+            <li>Klik icon ekstensi tersebut, lalu pilih <strong>Export</strong> (format Netscape HTTP Cookie File).</li>
+            <li>Upload file <code>cookies.txt</code> tersebut menggunakan tombol <strong>Upload cookies.txt</strong> atau <strong>Paste Teks</strong> di sini.</li>
+          </ol>
+          <p style="font-size:12px; color:#94a3b8; margin:0;">💡 <em>Tips:</em> Gunakan akun YouTube sekunder/cadangan jika tidak ingin menggunakan akun utama.</p>
+        </div>
+      `;
+      if (Swal) {
+        Swal.fire({
+          title: '🍪 Panduan YouTube Cookies',
+          html: htmlContent,
+          confirmButtonText: 'Mengerti',
+          confirmButtonColor: '#8b5cf6',
+          background: '#111824',
+          color: '#e8edf2',
+          width: 520,
+        });
+      } else {
+        alert("Panduan cookies:\n1. Buka youtube.com di browser dan login\n2. Gunakan ekstensi 'Get cookies.txt LOCALLY' untuk export cookies.txt\n3. Upload file cookies.txt ke sini.");
+      }
+    });
+  }
+
+  refreshCookiesStatus();
+}
+
 (async () => {
   const serverCfg = await fetch(apiUrl('/api/config')).then((r) => r.json()).catch(() => ({}));
   const localCfg = loadLocalCfg();
@@ -1787,4 +1967,5 @@ const loadPlayer = (videoId) => {
   
   // Clean up old output files
   fetch(apiUrl('/api/clean'), { method: 'POST' }).catch(() => {});
+  initCookiesManager();
 })();

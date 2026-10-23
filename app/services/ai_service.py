@@ -11,7 +11,12 @@ from app.core_constants import MAX_DURATION
 from app.ffmpeg_deps import cek_dependensi
 from app.yt_info import extract_video_id
 from app.services.gemini_service import generate_clip_metadata, process_audio_with_gemini
-from app.yt_utils import get_yt_dlp_cookies_args, normalize_youtube_url
+from app.yt_utils import (
+    get_cookies_path,
+    get_yt_dlp_cookies_args,
+    get_yt_dlp_proxy_args,
+    normalize_youtube_url,
+)
 
 
 _AI_DEPS_READY = False
@@ -41,14 +46,26 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
         "249", # webm 50k
         "250", # webm 70k
         "wa",  # worst audio
+        "ba/b",
     ]
-    player_client_candidates = [
-        "ios",
-        "android",
-        "web_creator,tv_embedded,mweb",
-        "tv_simply,mweb",
-        "",  # Empty means don't pass --extractor-args, use yt-dlp default
-    ]
+
+    cookies_present = bool(get_cookies_path())
+    if cookies_present:
+        player_client_candidates = [
+            "web_creator,mweb",
+            "",
+            "ios",
+            "android",
+            "tv_embedded,mweb",
+        ]
+    else:
+        player_client_candidates = [
+            "web_creator,tv_embedded,mweb",
+            "ios",
+            "android",
+            "tv_simply,mweb",
+            "",  # Empty means don't pass --extractor-args, use yt-dlp default
+        ]
 
     try:
         last_error = None
@@ -63,6 +80,8 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
                     "--quiet",
                     "--no-warnings",
                     "--no-playlist",
+                    "--js-runtimes",
+                    "node",
                 ]
                 if player_client:
                     cmd.extend(["--extractor-args", f"youtube:player_client={player_client}"])
@@ -71,6 +90,7 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
                     fmt,
                 ])
                 cmd.extend(get_yt_dlp_cookies_args())
+                cmd.extend(get_yt_dlp_proxy_args())
                 cmd.extend([
                     "-o",
                     out_tpl,
@@ -90,6 +110,13 @@ def _download_audio_to_temp(url: str) -> tuple[str, tempfile.TemporaryDirectory]
     except subprocess.CalledProcessError as e:
         err = (e.stderr or "").strip() or (e.stdout or "").strip()
         tmpdir.cleanup()
+        if "Sign in to confirm you’re not a bot" in err or "Sign in to confirm you're not a bot" in err:
+            err_msg = (
+                "YouTube memblokir request (Bot Detection / IP Datacenter).\n"
+                "Solusi: Pasang file cookies.txt YouTube dari browser di menu YouTube Cookies atau letakkan di /data/cookies.txt pada server production.\n\n"
+                f"Detail: {err}"
+            )
+            raise ValueError(err_msg)
         raise ValueError("Gagal download audio untuk backup AI." + (f"\n\nDetail: {err}" if err else ""))
 
     hits = sorted(glob.glob(os.path.join(tmpdir.name, "audio.*")))
@@ -113,12 +140,16 @@ def _fetch_youtube_subtitle(url: str, language: str) -> list[dict]:
             "--quiet",
             "--no-warnings",
             "--no-playlist",
+            "--js-runtimes",
+            "node",
+            "--extractor-args",
+            "youtube:player_client=web_creator,mweb,android",
             "--write-auto-sub",
             "--write-sub",
             "--sub-lang", f"{language},en,id",
             "--sub-format", "json3",
             "--skip-download",
-        ] + get_yt_dlp_cookies_args() + [
+        ] + get_yt_dlp_cookies_args() + get_yt_dlp_proxy_args() + [
             "-o", out_tpl,
             normalize_youtube_url(url)
         ]

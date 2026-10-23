@@ -13,7 +13,7 @@ from app.ffmpeg_deps import cek_dependensi
 from app.subtitle_ai import generate_subtitle, set_whisper_model
 from app.yt_info import extract_video_id, get_duration
 from app.services.gemini_service import generate_clip_metadata
-from app.yt_utils import get_yt_dlp_cookies_args, normalize_youtube_url
+from app.yt_utils import get_yt_dlp_cookies_args, get_yt_dlp_proxy_args, normalize_youtube_url
 
 
 def unique_path(folder, stem, ext):
@@ -193,7 +193,7 @@ def proses_satu_clip(
                     "--restrict-filenames",
                     "--js-runtimes",
                     "node",
-                ] + get_yt_dlp_cookies_args() + [
+                ] + get_yt_dlp_cookies_args() + get_yt_dlp_proxy_args() + [
                     "-o",
                     out_tpl,
                     video_url,
@@ -224,7 +224,7 @@ def proses_satu_clip(
                 "--restrict-filenames",
                 "--js-runtimes",
                 "node",
-            ] + get_yt_dlp_cookies_args() + [
+            ] + get_yt_dlp_cookies_args() + get_yt_dlp_proxy_args() + [
                 "-o",
                 out_tpl,
                 video_url,

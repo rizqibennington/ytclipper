@@ -1,15 +1,17 @@
 # YTClipper (Web)
 
-Aplikasi web lokal (Flask) buat nge-clip video YouTube jadi format vertikal 9:16, berbasis data **Most Replayed (heatmap)**. Lo bisa auto-generate segmen dari heatmap, edit manual di UI, lalu proses jadi MP4 siap Shorts/Reels/TikTok.
+Aplikasi web lokal (Flask/FastAPI) buat nge-clip video YouTube jadi format vertikal 9:16, berbasis data **Most Replayed (heatmap)**. Lo bisa auto-generate segmen dari heatmap, edit manual di UI, lalu proses jadi MP4 siap Shorts/Reels/TikTok.
 
-Yang penting: ini jalan di PC lo sendiri, gak butuh YouTube API key, tapi butuh **FFmpeg** dan koneksi internet buat akses YouTube.
+Yang penting: ini jalan di PC lo sendiri atau server VPS/Docker, gak butuh YouTube API key, tapi butuh **FFmpeg** dan koneksi internet buat akses YouTube.
 
 ---
 
 ## Fitur
 
-- Web UI lokal: tempel URL, preview video, dan pilih segmen
+- Web UI: tempel URL, preview video, dan pilih segmen
 - Load heatmap “Most Replayed” buat auto-segmen
+- Fallback AI (Gemini / Subtitle) saat video tidak memiliki heatmap
+- Manajemen YouTube Cookies (Upload / Paste langsung dari UI) untuk bypass bot detection di server production
 - Tambah segmen manual (start/end) + enable/disable per segmen
 - Crop mode:
   - `default` (center crop)
@@ -24,78 +26,41 @@ Yang penting: ini jalan di PC lo sendiri, gak butuh YouTube API key, tapi butuh 
 
 ## Requirement
 
-- Python 3.8+
+- Python 3.10+
 - FFmpeg harus ada di PATH
+- Node.js (direkomendasikan untuk JS runtime yt-dlp)
 
 Python package (lihat [requirements.txt](requirements.txt)):
-- `flask`
 - `requests`
 - `yt-dlp`
+- `fastapi`
+- `uvicorn`
 - `faster-whisper`
-
-Catatan: subtitle AI bakal download model pertama kali (lumayan gede). Kalau PC lo kentang, pilih model `tiny`/`base`.
+- `google-genai`
 
 ---
 
-## Instalasi
+## Instalasi & Menjalankan
 
-1) Install dependency Python
+### Cara 1: Menggunakan Docker (Production / VPS)
 
+```bash
+docker-compose up -d --build
+```
+Akses di browser: `http://<ip-server>:5000`
+
+### Cara 2: Manual / Lokal
+
+1) Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2) Install FFmpeg
-
-Windows (cara gampang):
-
-1. Download dari https://ffmpeg.org/download.html
-2. Extract ke misalnya `C:\ffmpeg`
-3. Masukin `C:\ffmpeg\bin` ke PATH
-4. Tutup-buka terminal lagi
-
-3) (Opsional) cek setup
-
-```bash
-python check_setup.py
-```
-
----
-
-## Menjalankan
-
-Jalanin server:
-
+2) Jalankan aplikasi:
 ```bash
 python run.py
 ```
-
-Lalu buka browser:
-
-- http://127.0.0.1:5000/
-
-Environment variable yang kepake:
-
-- `HOST` (default `127.0.0.1`)
-- `PORT` (default `5000`)
-- `FLASK_DEBUG` (set `1` buat debug)
-
-Contoh:
-
-```bash
-set FLASK_DEBUG=1
-set HOST=0.0.0.0
-set PORT=5000
-python run.py
-```
-
----
-
-## Output & Config
-
-- Output default: `~/Videos/ClipAI` (Windows biasanya `C:\Users\<nama>\Videos\ClipAI`)
-- Kalau pilih output custom di UI, hasil clip masuk ke folder itu
-- Config server disimpen di file: `~/.ytclipper_web.json`
+Akses di browser: `http://127.0.0.1:5000`
 
 ---
 
@@ -110,20 +75,29 @@ python run.py
 
 ## Troubleshooting
 
+### Error: "Sign in to confirm you're not a bot" di Production / VPS
+
+Penyebab: YouTube memblokir IP Datacenter/VPS (Cloudflare, DigitalOcean, Hetzner, AWS, Tencent, dll.) yang melakukan download otomatis tanpa login.
+
+**Solusi (Sangat Mudah):**
+1. Di browser laptop/PC Anda, pasang ekstensi:
+   - **Get cookies.txt LOCALLY** (Chrome Web Store) atau **Cookie-Editor**.
+2. Buka [youtube.com](https://www.youtube.com) (pastikan dalam keadaan login akun Google/YouTube biasa).
+3. Klik ekstensi tersebut, lalu klik **Export** (format Netscape HTTP Cookie File).
+4. Di UI YTClipper, masuk ke bagian **🍪 YouTube Cookies**:
+   - Klik **📁 Upload cookies.txt** lalu pilih file yang baru diekspor tadi, ATAU klik **📋 Paste Teks**.
+   - Status akan langsung berubah menjadi `✅ Terpasang`.
+5. *(Alternatif CLI/Docker)*: Letakkan file tersebut di `./data/cookies.txt` pada folder server host Anda, lalu restart container: `docker-compose restart`.
+
+### Heatmap kosong: "video ini tidak punya Most Replayed, atau parsing gagal"
+
+- Tidak semua video YouTube memiliki grafik Most Replayed (misal video baru, views rendah, atau video tertentu).
+- Ketika heatmap kosong, sistem akan otomatis beralih ke **Backup AI** (mengambil audio dan transkrip untuk auto-generate segmen highlight).
+
 ### FFmpeg tidak ketemu
 
 - Pastikan `ffmpeg -version` bisa dipanggil dari terminal
-- Kalau udah install tapi masih gak kebaca, cek PATH-nya (classic Windows moment)
-
-### Heatmap kosong
-
-- Gak semua video punya “Most Replayed”
-- Pastikan URL benar (watch / shorts / youtu.be)
-
-### Subtitle gagal
-
-- Model pertama kali download butuh internet
-- Coba model lebih kecil (`tiny`/`base`)
+- Kalau sudah install tapi masih gak kebaca, cek PATH sistem Anda.
 
 ---
 

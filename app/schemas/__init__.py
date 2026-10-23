@@ -1,6 +1,7 @@
 from app.schemas.ai import AiSegmentsRequest, AiSegmentsResponse, GeminiSuggestionRequest, GeminiSuggestionResponse
 from app.schemas.base import ErrorResponse, OkResponse
 from app.schemas.config import ConfigResponse, ConfigUpdateRequest
+from app.schemas.cookies import CookieStatus, CookiesStatusResponse, UploadCookiesRequest, UploadCookiesResponse
 from app.schemas.heatmap import HeatmapRequest, HeatmapResponse, ScoredSegment, Segment
 from app.schemas.jobs import JobStatusResponse, StartJobRequest, StartJobResponse
 from app.schemas.video import VideoInfoRequest, VideoInfoResponse
@@ -15,6 +16,10 @@ __all__ = [
     "OkResponse",
     "ConfigResponse",
     "ConfigUpdateRequest",
+    "CookieStatus",
+    "CookiesStatusResponse",
+    "UploadCookiesRequest",
+    "UploadCookiesResponse",
     "HeatmapRequest",
     "HeatmapResponse",
     "Segment",
@@ -25,4 +30,3 @@ __all__ = [
     "VideoInfoRequest",
     "VideoInfoResponse",
 ]
-

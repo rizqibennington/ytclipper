@@ -257,6 +257,10 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
     sess = session or requests.Session()
     # Load cookies from file if available
     load_cookies_into_session(sess)
+    proxy = os.environ.get('YTCLIPPER_PROXY')
+    if proxy and str(proxy).strip():
+        p = str(proxy).strip()
+        sess.proxies.update({'http': p, 'https': p})
     
     timeout = (6, 20)
     if os.environ.get("YTCLIPPER_HEATMAP_SCAN_INITIAL_DATA") is not None:

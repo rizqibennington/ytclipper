@@ -165,6 +165,33 @@
           <option value="yes">Ya</option>
         </select>
         <div id="geminiKeyHint" class="muted" style="margin-top:6px"></div>
+        
+        <!-- YouTube Cookies (Anti-Bot / Production) -->
+        <div style="margin-top:14px; padding:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+            <label style="margin:0; font-weight:600; display:flex; align-items:center; gap:8px;">
+              <span>🍪 YouTube Cookies</span>
+              <span id="cookieBadge" style="font-size:11px; padding:2px 8px; border-radius:10px; background:#3f3f46; color:#e4e4e7;">Mengecek...</span>
+            </label>
+            <button type="button" class="btn" id="cookieHelpBtn" style="padding:3px 8px; font-size:11px; border-radius:6px;" title="Cara mendapatkan cookies.txt">ℹ️ Info Cookies</button>
+          </div>
+          <div class="muted" style="font-size:12px; margin-bottom:10px;">
+            Wajib untuk server VPS / Docker Production agar tidak diblokir YouTube (<em>Sign in to confirm you're not a bot</em>).
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="file" id="cookieFileInput" accept=".txt" style="display:none;" />
+            <button type="button" class="btn" id="uploadCookieBtn" style="padding:6px 12px; font-size:12px; border-radius:8px;">
+              📁 Upload cookies.txt
+            </button>
+            <button type="button" class="btn" id="pasteCookieBtn" style="padding:6px 12px; font-size:12px; border-radius:8px;">
+              📋 Paste Teks
+            </button>
+            <button type="button" class="btn danger" id="deleteCookieBtn" style="padding:6px 12px; font-size:12px; border-radius:8px; display:none;">
+              🗑️ Hapus
+            </button>
+          </div>
+          <div id="cookieStatusMsg" class="muted" style="font-size:11px; margin-top:8px;"></div>
+        </div>
         <div style="height:10px"></div>
         <div class="row" style="align-items:flex-end;">
           <div style="flex:0 0 160px;">
