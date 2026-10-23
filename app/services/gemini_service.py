@@ -1,10 +1,29 @@
 import logging
 import json
+import os
 
 from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+
+
+def get_gemini_client(api_key: str) -> genai.Client:
+    """Menginisialisasi Gemini Client dengan opsi proxy/base_url jika tersedia di environment."""
+    http_options_kwargs = {}
+
+    base_url = os.environ.get("GEMINI_BASE_URL")
+    if base_url:
+        http_options_kwargs["base_url"] = base_url.strip().rstrip("/")
+
+    proxy = os.environ.get("GEMINI_PROXY") or os.environ.get("HTTPS_PROXY")
+    if proxy:
+        http_options_kwargs["client_args"] = {"proxy": proxy.strip()}
+        http_options_kwargs["async_client_args"] = {"proxy": proxy.strip()}
+
+    if http_options_kwargs:
+        return genai.Client(api_key=api_key, http_options=types.HttpOptions(**http_options_kwargs))
+    return genai.Client(api_key=api_key)
 
 def generate_clip_metadata(transcript_text, api_key):
     """
@@ -58,7 +77,7 @@ def generate_clip_metadata(transcript_text, api_key):
         },
     )
 
-    client = genai.Client(api_key=api_key)
+    client = get_gemini_client(api_key)
     last_err = None
     for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
         try:
@@ -84,7 +103,7 @@ def process_audio_with_gemini(audio_path, api_key):
     if not api_key:
         raise ValueError("API Key Gemini belum diset.")
     
-    client = genai.Client(api_key=api_key)
+    client = get_gemini_client(api_key)
     uploaded_file = None
     try:
         uploaded_file = client.files.upload(file=audio_path)
