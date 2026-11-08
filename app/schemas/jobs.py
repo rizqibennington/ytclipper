@@ -1,3 +1,4 @@
+from typing import Any
 from pydantic import BaseModel
 
 from app.schemas.ai import StartJobRequest, StartJobResponse
@@ -20,6 +21,7 @@ class JobStatusResponse(BaseModel):
     logs: str | None = None
     files: list[str] = []
     segments: list[dict] | None = None
+    ai_metadata: dict[str, Any] | None = None
 
 
 __all__ = [

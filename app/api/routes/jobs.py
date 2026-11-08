@@ -1,8 +1,10 @@
+import io
 import os
+import zipfile
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
-from app.jobs import get_job
+from app.jobs import cancel_job, get_job
 from app.schemas import JobStatusResponse, StartJobRequest, StartJobResponse
 from app.services.clip_service import inspect_output_dir, start_clip_job
 
@@ -51,7 +53,16 @@ def status(job_id: str):
         "logs": logs,
         "files": job.get("files", []),
         "segments": job.get("segments", []),
+        "ai_metadata": job.get("ai_metadata", {}),
     }
+
+
+@router.post("/cancel/{job_id}")
+def cancel(job_id: str):
+    ok = cancel_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+    return {"ok": True, "message": "Job berhasil dibatalkan"}
 
 
 @router.get("/download/{job_id}/{filename}")
@@ -73,3 +84,40 @@ def download_file(job_id: str, filename: str):
         raise HTTPException(status_code=404, detail="File fisik tidak ditemukan di server")
         
     return FileResponse(path=file_path, filename=filename, media_type="video/mp4")
+
+
+@router.get("/download-zip/{job_id}")
+def download_zip(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+    
+    output_dir = job.get("output_dir")
+    if not output_dir or not os.path.exists(output_dir):
+        raise HTTPException(status_code=404, detail="Output directory tidak ditemukan")
+    
+    files = job.get("files", [])
+    if not files:
+        raise HTTPException(status_code=400, detail="Tidak ada file hasil untuk diunduh")
+    
+    mem_zip = io.BytesIO()
+    with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            f_path = os.path.join(output_dir, f)
+            if os.path.exists(f_path):
+                zf.write(f_path, arcname=f)
+                
+                # Sertain file _ai.txt jika ada
+                base_stem = os.path.splitext(f)[0]
+                ai_txt = base_stem + "_ai.txt"
+                ai_path = os.path.join(output_dir, ai_txt)
+                if os.path.exists(ai_path):
+                    zf.write(ai_path, arcname=ai_txt)
+                    
+    mem_zip.seek(0)
+    zip_name = f"ytclips_{job_id[:8]}.zip"
+    return StreamingResponse(
+        mem_zip,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'}
+    )

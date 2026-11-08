@@ -87,6 +87,14 @@ def start_clip_job(data):
     if subtitle_position not in ("bottom", "middle", "top"):
         subtitle_position = "middle"
 
+    subtitle_font_name = str(data.get("subtitle_font_name", "Arial Black")).strip() or "Arial Black"
+    try:
+        subtitle_font_size = int(data.get("subtitle_font_size", 22))
+        subtitle_font_size = max(12, min(50, subtitle_font_size))
+    except Exception:
+        subtitle_font_size = 22
+    subtitle_font_color = str(data.get("subtitle_font_color", "#FFFFFF")).strip().upper() or "#FFFFFF"
+
     output_dir = data.get("output_dir")
     if output_dir is None or str(output_dir).strip() == "":
         output_dir = default_output_dir()
@@ -132,6 +140,9 @@ def start_clip_job(data):
         "whisper_model": whisper_model,
         "subtitle_language": subtitle_language,
         "subtitle_position": subtitle_position,
+        "subtitle_font_name": subtitle_font_name,
+        "subtitle_font_size": subtitle_font_size,
+        "subtitle_font_color": subtitle_font_color,
         "output_dir": output_dir,
         "apply_padding": False,
         "total_clips": len(enabled_segments),
@@ -148,6 +159,9 @@ def start_clip_job(data):
     cfg["whisper_model"] = whisper_model
     cfg["subtitle_language"] = subtitle_language
     cfg["subtitle_position"] = subtitle_position
+    cfg["subtitle_font_name"] = subtitle_font_name
+    cfg["subtitle_font_size"] = subtitle_font_size
+    cfg["subtitle_font_color"] = subtitle_font_color
     cfg["use_gemini_suggestions"] = use_gemini_suggestions
     save_config(cfg)
 

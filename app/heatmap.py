@@ -245,6 +245,97 @@ def _norm_start_duration(marker):
         return None
 
 
+def _cluster_heatmap_peaks(markers, duration_seconds=None, target_duration=45.0, min_duration=25.0, max_duration=60.0, limit=10):
+    """
+    Mengelompokkan titik-titik heatmap puncak (Most Replayed) menjadi segmen Shorts
+    berdurasi optimal (30-60 detik) dengan hook sebelum puncak dan resolusi setelahnya,
+    serta Non-Maximum Suppression (NMS) untuk menghindari duplikasi tumpang-tindih.
+    """
+    if not markers:
+        return []
+
+    sorted_markers = sorted(markers, key=lambda x: x["start"])
+    dur_total = float(duration_seconds) if duration_seconds is not None else None
+    if dur_total is None or dur_total <= 0:
+        dur_total = max((m["start"] + m["duration"] for m in sorted_markers), default=0.0)
+
+    candidates = []
+    n = len(sorted_markers)
+    for i, m in enumerate(sorted_markers):
+        sc = m["score"]
+        if sc < 0.2:
+            continue
+        prev_sc = sorted_markers[i - 1]["score"] if i > 0 else 0.0
+        next_sc = sorted_markers[i + 1]["score"] if i < n - 1 else 0.0
+
+        is_peak = (sc >= prev_sc and sc >= next_sc) or (sc >= 0.7)
+        if not is_peak:
+            continue
+
+        p_start = m["start"]
+        pre_roll = min(12.0, target_duration * 0.3)
+        win_start = max(0.0, p_start - pre_roll)
+        win_end = min(dur_total, win_start + target_duration)
+
+        if (win_end - win_start) < min_duration and dur_total >= min_duration:
+            win_start = max(0.0, win_end - min_duration)
+
+        win_dur = win_end - win_start
+        if win_dur < 10.0:
+            continue
+        if win_dur > max_duration:
+            win_end = win_start + max_duration
+
+        window_scores = [
+            it["score"] for it in sorted_markers
+            if it["start"] >= win_start and it["start"] <= win_end
+        ]
+        avg_score = sum(window_scores) / max(1, len(window_scores))
+        composite_score = (0.7 * sc) + (0.3 * avg_score)
+
+        candidates.append({
+            "start": round(win_start, 1),
+            "duration": round(win_end - win_start, 1),
+            "score": round(composite_score, 2),
+            "peak_time": p_start,
+        })
+
+    if not candidates:
+        for m in sorted(sorted_markers, key=lambda x: -x["score"])[:5]:
+            win_start = max(0.0, m["start"] - 8.0)
+            win_end = min(dur_total, win_start + target_duration)
+            candidates.append({
+                "start": round(win_start, 1),
+                "duration": round(win_end - win_start, 1),
+                "score": round(m["score"], 2),
+                "peak_time": m["start"],
+            })
+
+    # Non-Maximum Suppression (Anti-Tumpang Tindih)
+    candidates.sort(key=lambda x: -x["score"])
+    selected = []
+    for cand in candidates:
+        c_st = cand["start"]
+        c_en = c_st + cand["duration"]
+        overlap = False
+        for s in selected:
+            s_st = s["start"]
+            s_en = s_st + s["duration"]
+            inter_st = max(c_st, s_st)
+            inter_en = min(c_en, s_en)
+            inter_dur = max(0.0, inter_en - inter_st)
+            if inter_dur > 0.35 * cand["duration"]:
+                overlap = True
+                break
+        if not overlap:
+            selected.append(cand)
+            if len(selected) >= int(limit or 10):
+                break
+
+    selected.sort(key=lambda x: x["start"])
+    return selected
+
+
 def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_seconds=None, diag=None, session=None):
     url = f"https://www.youtube.com/watch?v={video_id}"
     headers = {
@@ -377,16 +468,39 @@ def ambil_most_replayed(video_id, min_score=None, fallback_limit=10, duration_se
     if diag_out is not None:
         diag_out["markers_in"] = int(len(all_markers))
         diag_out["markers_norm"] = int(len(items))
-        diag_out["threshold"] = float(threshold)
-    filtered = [it for it in items if it["score"] >= threshold]
-    if filtered:
-        return filtered
-        if diag_out is not None:
-            diag_out["total_ms"] = int((time.perf_counter() - t_all) * 1000)
+
+    # Kelompokkan puncak heatmap menjadi klip Shorts utuh berkualitas tinggi (20-60s)
     if items:
-        return items[: max(1, int(fallback_limit))]
+        clustered = _cluster_heatmap_peaks(items, duration_seconds=duration_seconds, limit=fallback_limit)
+        if clustered:
+            if diag_out is not None:
+                diag_out["total_ms"] = int((time.perf_counter() - t_all) * 1000)
+                diag_out["clustered"] = len(clustered)
+            return clustered
+
+    # Fallback: jika clustering kosong, jangan pernah mengembalikan micro-marker mentah 1-6 detik!
+    # Lakukan ekspansi titik puncak ke rentang Shorts (20-45 detik).
+    expanded = []
+    dur_total = float(duration_seconds) if duration_seconds is not None else None
+    for it in items[: max(1, int(fallback_limit))]:
+        st = float(it.get("start", 0.0))
+        win_start = max(0.0, st - 8.0)
+        win_dur = 45.0
+        if dur_total:
+            win_end = min(dur_total, win_start + win_dur)
+            if (win_end - win_start) < 20.0 and dur_total >= 20.0:
+                win_start = max(0.0, win_end - 20.0)
+            win_dur = win_end - win_start
+        expanded.append({
+            "start": round(win_start, 1),
+            "duration": round(win_dur, 1),
+            "score": float(it.get("score", 0.0)),
+        })
+
+    if expanded:
         if diag_out is not None:
             diag_out["total_ms"] = int((time.perf_counter() - t_all) * 1000)
+        return expanded
 
     chapter_items = _build_chapter_segments(chapter_starts, duration_seconds)
     if chapter_items:

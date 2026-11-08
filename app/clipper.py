@@ -49,6 +49,24 @@ def _fmt_time(s):
     return f"{m}:{sec:02d}"
 
 
+def _hex_to_ass_color(hex_color: str) -> str:
+    """Konversi format hex RGB (#RRGGBB) ke format warna ASS FFmpeg (&H00BBGGRR)."""
+    if not hex_color or not isinstance(hex_color, str):
+        return "&H00FFFFFF"
+    c = hex_color.strip().lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    if len(c) != 6:
+        return "&H00FFFFFF"
+    try:
+        r = c[0:2]
+        g = c[2:4]
+        b = c[4:6]
+        return f"&H00{b}{g}{r}".upper()
+    except Exception:
+        return "&H00FFFFFF"
+
+
 def proses_satu_clip(
     video_id,
     item,
@@ -59,6 +77,9 @@ def proses_satu_clip(
     use_subtitle=False,
     subtitle_language=None,
     subtitle_position="middle",
+    subtitle_font_name="Arial Black",
+    subtitle_font_size=22,
+    subtitle_font_color="#FFFFFF",
     output_dir=None,
     apply_padding=False,
     event_cb=None,
@@ -258,9 +279,11 @@ def proses_satu_clip(
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "veryfast",
                 "-crf",
-                "26",
+                "23",
+                "-af",
+                "loudnorm=I=-14:LRA=7:tp=-1",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -268,22 +291,33 @@ def proses_satu_clip(
                 cropped_file,
             ]
         elif crop_mode == "fit":
+            vf = (
+                "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=25:5[bg];"
+                "[0:v]scale=720:1280:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2[out]"
+            )
             cmd_crop = [
                 "ffmpeg",
                 "-y",
                 "-hide_banner",
                 "-loglevel",
-                "error",
+                "warning",
                 "-i",
                 temp_file,
-                "-vf",
-                "scale=720:1280:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                "-filter_complex",
+                vf,
+                "-map",
+                "[out]",
+                "-map",
+                "0:a?",
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "veryfast",
                 "-crf",
-                "26",
+                "23",
+                "-af",
+                "loudnorm=I=-14:LRA=7:tp=-1",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -315,9 +349,11 @@ def proses_satu_clip(
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "veryfast",
                 "-crf",
-                "26",
+                "23",
+                "-af",
+                "loudnorm=I=-14:LRA=7:tp=-1",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -349,9 +385,11 @@ def proses_satu_clip(
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "veryfast",
                 "-crf",
-                "26",
+                "23",
+                "-af",
+                "loudnorm=I=-14:LRA=7:tp=-1",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -389,15 +427,22 @@ def proses_satu_clip(
                 else:
                     alignment = 5
                     margin_v = 0
+                font_name = str(subtitle_font_name or "Arial Black").strip() or "Arial Black"
+                try:
+                    font_size = int(subtitle_font_size or 22)
+                except Exception:
+                    font_size = 22
+                primary_color = _hex_to_ass_color(subtitle_font_color or "#FFFFFF")
+
                 force_style = (
-                    "FontName=Arial,"
-                    "FontSize=12,"
+                    f"FontName={font_name},"
+                    f"FontSize={font_size},"
                     "Bold=1,"
-                    "PrimaryColour=&HFFFFFF,"
-                    "OutlineColour=&H000000,"
+                    f"PrimaryColour={primary_color},"
+                    "OutlineColour=&H00000000,"
                     "BorderStyle=1,"
-                    "Outline=2,"
-                    "Shadow=1,"
+                    "Outline=3,"
+                    "Shadow=1.5,"
                     f"Alignment={alignment},"
                     f"MarginV={margin_v}"
                 )
@@ -414,9 +459,9 @@ def proses_satu_clip(
                     "-c:v",
                     "libx264",
                     "-preset",
-                    "ultrafast",
+                    "veryfast",
                     "-crf",
-                    "26",
+                    "23",
                     "-c:a",
                     "copy",
                     output_file,
@@ -438,6 +483,7 @@ def proses_satu_clip(
             except Exception:
                 return False, "Gagal replace file output"
 
+        ai_meta_obj = None
         if gemini_api_key:
             try:
                 print(f"✨ [AI] Menggenerate judul & caption untuk Clip #{index}...")
@@ -470,6 +516,7 @@ def proses_satu_clip(
 
                 if transcript_text.strip():
                     meta = generate_clip_metadata(transcript_text, gemini_api_key)
+                    ai_meta_obj = meta
                     meta_file = os.path.splitext(output_file)[0] + "_ai.txt"
                     with open(meta_file, "w", encoding="utf-8") as f:
                         f.write("JUDUL:\n")
@@ -486,7 +533,7 @@ def proses_satu_clip(
                 print(f"⚠️ [AI Error] {str(e)}")
 
         print(f"✅ Clip #{index} selesai → {os.path.basename(output_file)}")
-        return True, output_file
+        return True, output_file, ai_meta_obj
     except subprocess.CalledProcessError as e:
         print(f"❌ [ERROR] Clip #{index} gagal (crop_mode={crop_mode})")
         err_msg = str(e)
@@ -519,6 +566,9 @@ def proses_dengan_segmen(
     whisper_model=None,
     subtitle_language=None,
     subtitle_position="middle",
+    subtitle_font_name="Arial Black",
+    subtitle_font_size=22,
+    subtitle_font_color="#FFFFFF",
     output_dir=None,
     apply_padding=False,
     event_cb=None,
@@ -576,9 +626,10 @@ def proses_dengan_segmen(
     success = 0
     errors = []
     generated_files = []
+    ai_metadata = {}
     for seg in cleaned:
         item = {"start": seg["start"], "end": seg["end"]}
-        ok, res = proses_satu_clip(
+        res_tuple = proses_satu_clip(
             video_id=video_id,
             item=item,
             index=success + 1,
@@ -588,15 +639,23 @@ def proses_dengan_segmen(
             use_subtitle=use_subtitle,
             subtitle_language=subtitle_language,
             subtitle_position=subtitle_position,
+            subtitle_font_name=subtitle_font_name,
+            subtitle_font_size=subtitle_font_size,
+            subtitle_font_color=subtitle_font_color,
             output_dir=output_dir,
             apply_padding=apply_padding,
             event_cb=event_cb,
             gemini_api_key=gemini_api_key,
         )
+        ok = res_tuple[0]
+        res = res_tuple[1]
+        meta = res_tuple[2] if len(res_tuple) > 2 else None
         if ok:
             success += 1
             if res:
                 generated_files.append(res)
+                if meta:
+                    ai_metadata[os.path.basename(res)] = meta
         elif res:
             errors.append(res)
 
@@ -611,4 +670,4 @@ def proses_dengan_segmen(
             msg += f"\nDetail error: {'; '.join(unique_errors)}"
         raise RuntimeError(msg)
 
-    return {"success_count": success, "output_dir": output_dir, "files": generated_files}
+    return {"success_count": success, "output_dir": output_dir, "files": generated_files, "ai_metadata": ai_metadata}

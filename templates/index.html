@@ -52,13 +52,66 @@
           </button>
         </div>
         <div style="height:10px"></div>
-        <div class="muted" id="info">Durasi: -</div>
-        <div style="height:12px"></div>
-        <div class="player">
-          <div id="player"></div>
-          <svg id="mainCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <!-- Toolbar Player Preview: Durasi, Mode Crop, & Switcher 9:16 / 16:9 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:8px 12px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div class="muted" id="info" style="font-weight:600; font-size:12px;">Durasi: -</div>
+            <div style="height:14px; width:1px; background:rgba(255,255,255,0.15);"></div>
+            <!-- Crop Mode Dropdown -->
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="crop" style="margin:0; font-size:12px; font-weight:600; color:#38bdf8; display:flex; align-items:center; gap:4px;" title="Pilih mode pemotongan video (split facecam, center crop, fit blur)">
+                ✂️ Crop Mode:
+              </label>
+              <select id="crop" class="seg-crop-select" style="width:auto; font-size:12px; padding:4px 8px; border-radius:8px; min-width:170px;">
+                <option value="default">default (center crop)</option>
+                <option value="fit">fit (blurred background)</option>
+                <option value="split_left" selected>split_left (facecam kiri)</option>
+                <option value="split_right">split_right (facecam kanan)</option>
+              </select>
+            </div>
+            <!-- Preview Crop Line Checkbox -->
+            <label style="display:flex; gap:6px; align-items:center; font-size:11px; color:var(--text-muted); cursor:pointer; margin:0;" title="Tampilkan garis bantu area crop pada video">
+              <input id="cropPrev" type="checkbox" checked />
+              <span>Garis Crop</span>
+            </label>
+          </div>
+
+          <!-- View Mode Switcher: Shorts 9:16 vs Full 16:9 -->
+          <div style="display:flex; gap:4px; background:rgba(0,0,0,0.35); padding:3px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
+            <button type="button" class="seg-tab-btn active" id="btnMainViewShorts" title="Simulasi vertikal 9:16 (Shorts/TikTok/Reels) dengan crop dan subtitle">
+              📱 Shorts (9:16)
+            </button>
+            <button type="button" class="seg-tab-btn" id="btnMainViewFull" title="Tampilan penuh 16:9 dengan batas crop">
+              🖥️ Full (16:9)
+            </button>
+          </div>
         </div>
-        <div style="height:10px"></div>
+
+        <!-- 9:16 Shorts View (Unified: Video + Crop + Subtitle) -->
+        <div id="mainShortsView" style="display: flex; flex-direction: column; align-items: center; width: 100%; margin-bottom: 12px;">
+          <div style="position: relative; width: 300px; max-width: 100%; margin: 0 auto;">
+            <div class="shorts-phone-frame" id="mainShortsContainer">
+              <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px;">
+                <svg style="width: 38px; height: 38px; margin-bottom: 10px; opacity: 0.5;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                  <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                </svg>
+                <span>Masukkan link YouTube & klik <b>Open</b> untuk memuat preview</span>
+              </div>
+            </div>
+            <div id="mainShortsSubOverlay" class="sub-overlay-text pos-middle" style="display: none; z-index: 10; pointer-events: none;"></div>
+          </div>
+        </div>
+
+        <!-- 16:9 Full View (Video + Crop Lines + Subtitle) -->
+        <div id="mainFullView" style="display: none; width: 100%; margin-bottom: 12px;">
+          <div class="player" style="position: relative;">
+            <div id="player"></div>
+            <svg id="mainCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div id="mainFullSubOverlay" class="sub-overlay-text pos-middle" style="display: none; z-index: 10; pointer-events: none;"></div>
+          </div>
+        </div>
+
         <div class="row">
           <button class="btn" id="play" title="Play/Pause preview.">
             <span class="btnLabel">
@@ -76,7 +129,7 @@
               <span>Stop</span>
             </span>
           </button>
-          <input id="previewSecs" type="number" min="5" max="600" step="1" title="Preview pertama N detik." />
+          <input id="previewSecs" type="number" min="5" max="600" step="1" title="Preview pertama N detik." value="30" />
           <button class="btn" id="playPreview" title="Mainkan dari 0 sampai preview detik.">
             <span class="btnLabel">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -84,15 +137,6 @@
                 <path d="M22 4v6h-6"></path>
               </svg>
               <span>Play Preview</span>
-            </span>
-          </button>
-          <button class="btn primary" id="btnSimulateShorts" title="Simulasikan tampilan 9:16 di layar HP">
-            <span class="btnLabel">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-                <line x1="12" y1="18" x2="12.01" y2="18"></line>
-              </svg>
-              <span>Simulasi Shorts</span>
             </span>
           </button>
         </div>
@@ -111,7 +155,7 @@
           Segmen Otomatis (Most Replayed)
         </div>
         <div class="muted" style="margin:-4px 0 10px 0">Preview/edit per segmen sebelum diproses. Tombol Preview akan membuka modal untuk adjust start/end.</div>
-        <div class="row" style="margin:0 0 10px 0">
+        <div class="row" style="margin:0 0 10px 0; align-items:center; flex-wrap:wrap; gap:8px;">
           <button class="btn" id="segSelectAll" title="Aktifkan semua segmen." disabled>
             <span class="btnLabel">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -130,44 +174,197 @@
               <span>Deselect All</span>
             </span>
           </button>
-          <div class="muted" id="segPickInfo" style="text-align:right;flex:1"></div>
+
+          <!-- Sorting Controls -->
+          <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+            <label for="segSortSelect" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:4px; margin:0;">
+              <span>Urutkan:</span>
+            </label>
+            <select id="segSortSelect" style="padding:5px 8px; font-size:12px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#fff; cursor:pointer; color-scheme:dark;">
+              <option value="score_desc">🔥 Skor Tertinggi (Desc)</option>
+              <option value="score_asc">🔥 Skor Terendah (Asc)</option>
+              <option value="start_asc">⏱️ Waktu Start (Asc: 00:00 ➔)</option>
+              <option value="start_desc">⏱️ Waktu Start (Desc: ➔ 00:00)</option>
+              <option value="end_asc">🏁 Waktu End (Asc: 00:00 ➔)</option>
+              <option value="end_desc">🏁 Waktu End (Desc: ➔ 00:00)</option>
+              <option value="dur_desc">⏳ Durasi Terpanjang (Desc)</option>
+              <option value="dur_asc">⏳ Durasi Terpendek (Asc)</option>
+            </select>
+            <button type="button" class="btn" id="btnToggleSortDir" style="padding:5px 10px; font-size:11px; font-weight:600;" title="Balik arah urutan (Ascending / Descending)">
+              ▼ Desc
+            </button>
+          </div>
+          <div class="muted" id="segPickInfo" style="text-align:right;"></div>
         </div>
         <table class="seglist" id="segTable">
-          <thead><tr><th style="width:40px">On</th><th>Start</th><th>End</th><th>Dur</th><th style="width:64px">Score</th><th style="width:130px">Aksi</th></tr></thead>
+          <thead>
+            <tr>
+              <th style="width:40px">On</th>
+              <th class="th-sortable" data-col="start" title="Klik untuk mengurutkan Waktu Start">
+                Start <span class="sort-indicator" id="sortInd_start"></span>
+              </th>
+              <th class="th-sortable" data-col="end" title="Klik untuk mengurutkan Waktu End">
+                End <span class="sort-indicator" id="sortInd_end"></span>
+              </th>
+              <th class="th-sortable" data-col="dur" title="Klik untuk mengurutkan Durasi">
+                Dur <span class="sort-indicator" id="sortInd_dur"></span>
+              </th>
+              <th class="th-sortable" data-col="score" style="width:70px" title="Klik untuk mengurutkan Skor Virality">
+                Score <span class="sort-indicator" id="sortInd_score">▼</span>
+              </th>
+              <th style="width:130px">Aksi</th>
+            </tr>
+          </thead>
           <tbody></tbody>
         </table>
       </div>
       </div>
 
       <div class="col-right">
+      <!-- Card Subtitle AI (Auto Burn-In) -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h2 style="margin:0; display:flex; align-items:center; gap:8px;">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              <line x1="9" y1="9" x2="15" y2="9"></line>
+              <line x1="9" y1="13" x2="13" y2="13"></line>
+            </svg>
+            Subtitle AI (Auto Burn-In)
+          </h2>
+          <label style="display:flex; gap:6px; align-items:center; cursor:pointer; font-size:13px; font-weight:600;">
+            <input id="subOn" type="checkbox" />
+            <span style="color:var(--primary);">Aktifkan (ON)</span>
+          </label>
+        </div>
+        <div class="muted" style="margin:-4px 0 12px 0">Transkripsi ucapan otomatis dengan Whisper & styling tipografi langsung di video.</div>
+
+        <!-- Panel Pengaturan Subtitle Full-Width & Simetris -->
+        <div id="subConfigPanel" style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; transition:all 0.25s ease;">
+          
+          <!-- Baris 1: Model Whisper, Bahasa, Posisi (3 Kolom Simetris) -->
+          <div class="row" style="gap:12px; margin-bottom:14px;">
+            <div style="flex:1; min-width:110px;">
+              <label for="model" style="font-size:11px; margin-bottom:4px; display:block; color:var(--text-muted); font-weight:600;">Model Whisper</label>
+              <select id="model" title="Ukuran model Faster-Whisper.">
+                <option>tiny</option>
+                <option>base</option>
+                <option selected>small</option>
+                <option>medium</option>
+                <option>large-v3</option>
+              </select>
+            </div>
+            <div style="flex:1; min-width:100px;">
+              <label for="subLang" style="font-size:11px; margin-bottom:4px; display:block; color:var(--text-muted); font-weight:600;">Bahasa</label>
+              <select id="subLang" title="Bahasa subtitle">
+                <option value="auto">Auto Detect</option>
+                <option value="id" selected>ID (Indonesia)</option>
+                <option value="en">EN (Inggris)</option>
+              </select>
+            </div>
+            <div style="flex:1; min-width:100px;">
+              <label for="subPos" style="font-size:11px; margin-bottom:4px; display:block; color:var(--text-muted); font-weight:600;">Posisi Teks</label>
+              <select id="subPos" title="Posisi subtitle di layar video">
+                <option value="bottom">Bawah (Bottom)</option>
+                <option value="middle" selected>Tengah (Middle)</option>
+                <option value="top">Atas (Top)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Baris 2: Jenis Font & Warna Teks (2 Kolom Seimbang) -->
+          <div class="row" style="gap:14px; margin-bottom:14px; align-items:flex-end;">
+            <div style="flex:1; min-width:180px;">
+              <label for="subFont" style="font-size:11px; margin-bottom:4px; display:block; color:var(--text-muted); font-weight:600;">Jenis Font (Typography)</label>
+              <select id="subFont" class="seg-crop-select" style="font-size:12px; padding:7px 10px;" title="Pilih font untuk subtitle Shorts">
+                <option value="Arial Black" style="font-family:'Arial Black', sans-serif;" selected>Arial Black (Standar Viral)</option>
+                <option value="Montserrat" style="font-family:'Montserrat', sans-serif;">Montserrat (Aesthetic Bold)</option>
+                <option value="Impact" style="font-family:'Impact', sans-serif;">Impact (Punchy / Meme)</option>
+                <option value="Trebuchet MS" style="font-family:'Trebuchet MS', sans-serif;">Trebuchet MS (Clean & Clear)</option>
+                <option value="Verdana" style="font-family:'Verdana', sans-serif;">Verdana (Readable)</option>
+                <option value="Comic Sans MS" style="font-family:'Comic Sans MS', cursive;">Comic Sans MS (Casual)</option>
+                <option value="Segoe UI" style="font-family:'Segoe UI', sans-serif;">Segoe UI (Modern)</option>
+                <option value="Roboto" style="font-family:'Roboto', sans-serif;">Roboto (Universal)</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto;">
+              <label style="font-size:11px; margin-bottom:4px; display:block; color:var(--text-muted); font-weight:600;">Warna Teks</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="color" id="subFontColor" value="#FFFFFF" style="width:34px; height:34px; padding:2px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.4); cursor:pointer;" title="Pilih warna kustom">
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="sub-color-pill active" data-color="#FFFFFF" style="background:#FFFFFF;" title="Putih"></button>
+                  <button type="button" class="sub-color-pill" data-color="#FFEB3B" style="background:#FFEB3B;" title="Kuning Viral"></button>
+                  <button type="button" class="sub-color-pill" data-color="#00E5FF" style="background:#00E5FF;" title="Cyan"></button>
+                  <button type="button" class="sub-color-pill" data-color="#AEEA00" style="background:#AEEA00;" title="Hijau Lemon"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Baris 3: Slider Ukuran Font + Presets -->
+          <div style="margin-bottom:14px; background:rgba(255,255,255,0.02); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label for="subFontSize" style="font-size:11px; margin:0; color:var(--text-muted); font-weight:600;">Ukuran Font Subtitle</label>
+              <span id="subFontSizeVal" style="font-size:11px; font-weight:700; color:#38bdf8; background:rgba(56,189,248,0.1); padding:2px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.2);">22px</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:11px; color:var(--text-muted);">14</span>
+              <input type="range" id="subFontSize" min="14" max="38" value="22" step="1" style="flex:1; cursor:pointer;" />
+              <span style="font-size:11px; color:var(--text-muted);">38</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+              <button type="button" class="sub-size-preset" data-size="16">Kecil (16)</button>
+              <button type="button" class="sub-size-preset active" data-size="22">Standar (22)</button>
+              <button type="button" class="sub-size-preset" data-size="28">Besar (28)</button>
+              <button type="button" class="sub-size-preset" data-size="34">Ekstra (34)</button>
+            </div>
+          </div>
+
+          <!-- Baris 4: Teks Contoh Subtitle (Live Sync ke Player) -->
+          <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:11px; font-weight:600; color:#38bdf8; display:flex; align-items:center; gap:5px;">
+                <span>✨ Tes Teks Subtitle (Tampil Live di Player)</span>
+              </span>
+              <button type="button" id="btnCycleSubSample" class="btn" style="padding:2px 8px; font-size:11px;" title="Ganti contoh teks">
+                🔀 Ganti Contoh
+              </button>
+            </div>
+            <input type="text" id="subCustomText" placeholder="Ketik teks tes subtitle di sini..." style="font-size:12px; padding:7px 10px; width:100%; box-sizing:border-box;" value="🔥 RAHASIA VIRAL SHORTS TERBONGKAR!" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Card Pengaturan AI Title & Cookies (Opsional) -->
       <div class="card">
         <h2>
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 1v2"></path>
-            <path d="M12 21v2"></path>
-            <path d="M4.2 4.2l1.4 1.4"></path>
-            <path d="M18.4 18.4l1.4 1.4"></path>
-            <path d="M1 12h2"></path>
-            <path d="M21 12h2"></path>
-            <path d="M4.2 19.8l1.4-1.4"></path>
-            <path d="M18.4 5.6l1.4-1.4"></path>
-            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2a10 10 0 1 0 10 10H12V2z"></path>
+            <path d="M12 12L2.5 7.5"></path>
+            <path d="M12 12v10"></path>
           </svg>
-          Output & Subtitle
+          AI Metadata & Cookies
         </h2>
-        <div class="muted" style="margin:-6px 0 12px 0">Atur mode crop, dan opsi subtitle.</div>
+        <div class="muted" style="margin:-6px 0 12px 0">Saran Judul, Caption & Hashtag dari Gemini AI serta autentikasi YouTube.</div>
 
-        <label title="Masukkan Gemini API Key untuk fitur saran Judul & Caption (Opsional).">Gemini API Key (AI Title & Caption)</label>
-        <input id="geminiKey" type="password" placeholder="AIzaSy..." title="API Key dari Google AI Studio." autocomplete="off" />
-        <label style="display:block;margin-top:10px;" title="Kalau Tidak, aplikasi tidak akan generate saran judul/caption otomatis walaupun API key ada.">Generate saran AI (judul & caption)</label>
-        <select id="geminiOn" title="Aktifkan/nonaktifkan generate saran judul & caption." style="max-width:160px;">
-          <option value="no" selected>Tidak</option>
-          <option value="yes">Ya</option>
-        </select>
-        <div id="geminiKeyHint" class="muted" style="margin-top:6px"></div>
-        
+        <div style="margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label for="geminiKey" style="margin:0; font-size:12px; font-weight:600;" title="Masukkan Gemini API Key untuk fitur saran Judul & Caption (Opsional).">Gemini API Key (Judul & Caption AI)</label>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:11px; color:var(--text-muted);">Saran AI:</span>
+              <select id="geminiOn" title="Aktifkan/nonaktifkan saran AI." style="padding:2px 6px; font-size:11px; width:auto;">
+                <option value="no" selected>Tidak</option>
+                <option value="yes">Ya</option>
+              </select>
+            </div>
+          </div>
+          <input id="geminiKey" type="password" placeholder="AIzaSy... (Opsional)" title="API Key dari Google AI Studio." autocomplete="off" />
+          <div id="geminiKeyHint" class="muted" style="margin-top:4px; font-size:11px;"></div>
+        </div>
+
         <!-- YouTube Cookies (Anti-Bot / Production) -->
-        <div style="margin-top:14px; padding:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+        <div style="padding:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
             <label style="margin:0; font-weight:600; display:flex; align-items:center; gap:8px;">
               <span>🍪 YouTube Cookies</span>
@@ -175,7 +372,7 @@
             </label>
             <button type="button" class="btn" id="cookieHelpBtn" style="padding:3px 8px; font-size:11px; border-radius:6px;" title="Cara mendapatkan cookies.txt">ℹ️ Info Cookies</button>
           </div>
-          <div class="muted" style="font-size:12px; margin-bottom:10px;">
+          <div class="muted" style="font-size:11px; margin-bottom:10px;">
             Wajib untuk server VPS / Docker Production agar tidak diblokir YouTube (<em>Sign in to confirm you're not a bot</em>).
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -191,42 +388,6 @@
             </button>
           </div>
           <div id="cookieStatusMsg" class="muted" style="font-size:11px; margin-top:8px;"></div>
-        </div>
-        <div style="height:10px"></div>
-        <div class="row" style="align-items:flex-end;">
-          <div style="flex:0 0 160px;">
-            <label title="default=middle crop, fit=tanpa crop (pad), split untuk facecam bawah.">Crop Mode</label>
-            <select id="crop">
-              <option value="default">default</option>
-              <option value="fit">fit (no crop)</option>
-              <option value="split_left">split_left</option>
-              <option value="split_right">split_right</option>
-            </select>
-            <label style="display:flex;gap:8px;align-items:center;margin-top:10px;white-space:nowrap;" title="Tampilkan overlay perkiraan area crop di preview."><input id="cropPrev" type="checkbox" checked /> Preview crop</label>
-          </div>
-          <div style="flex:1;min-width:280px;">
-            <label title="Aktifkan subtitle AI (butuh download model).">Subtitle</label>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;"><input id="subOn" type="checkbox" /> ON</label>
-              <select id="model" title="Ukuran model Faster-Whisper." style="flex:1;min-width:100px;">
-                <option>tiny</option>
-                <option>base</option>
-                <option selected>small</option>
-                <option>medium</option>
-                <option>large-v3</option>
-              </select>
-              <select id="subLang" title="Bahasa subtitle: auto deteksi atau dipaksa." style="flex:0 0 110px;">
-                <option value="auto">Auto</option>
-                <option value="id" selected>ID</option>
-                <option value="en">EN</option>
-              </select>
-              <select id="subPos" title="Posisi subtitle: bawah / tengah / atas." style="flex:0 0 90px;">
-                <option value="bottom">Bawah</option>
-                <option value="middle" selected>Tengah</option>
-                <option value="top">Atas</option>
-              </select>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -304,9 +465,12 @@
         </div>
         <div style="height:12px"></div>
         <div class="progress"><div class="bar" id="bar"></div></div>
-        <div class="row" style="margin-top:8px">
-          <div class="muted" id="status">Idle</div>
+        <div class="row" style="margin-top:8px; align-items:center;">
+          <div class="muted" id="status" style="flex:1;">Idle</div>
           <div class="muted" id="eta" style="text-align:right"></div>
+          <button class="btn danger" id="btnCancelJob" style="display:none; padding:4px 10px; font-size:12px; margin-left:8px;" title="Batalkan proses saat ini">
+            ⏹ Batal
+          </button>
         </div>
         <pre id="log" class="mono"></pre>
       </div>
@@ -342,111 +506,146 @@
   </div>
 
   <div class="modal" id="segModal">
-    <div class="box">
-      <h3>Preview Heatmap</h3>
-      <div class="muted" id="segMeta"></div>
-      <div class="muted">Batas per klip: 03:00 (180 detik).</div>
-      <div style="height:10px"></div>
-      <div class="player">
-        <div id="segPlayer"></div>
-        <svg id="segCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
-      </div>
-      <div style="height:10px"></div>
-      <div class="row">
-        <label style="display:flex;gap:8px;align-items:center;justify-content:flex-end" title="Aktif/nonaktif segmen ini untuk diproses.">
-          <input id="segEnabled" type="checkbox" />
-          Enable segmen
-        </label>
-      </div>
-      <div style="height:12px"></div>
-      <h3 style="margin:0 0 10px 0">Edit Segment</h3>
-      <div class="row">
+    <div class="box" style="width: min(980px, 96vw); max-height: calc(100vh - 40px); padding: 20px 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 14px;">
         <div>
-          <label title="Format: MM:SS">Start</label>
-          <input id="segEditStart" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="5" />
+          <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Preview & Edit Segmen</h3>
+          <div class="muted" id="segMeta" style="margin-top: 3px; font-size: 12px;"></div>
         </div>
-        <div>
-          <label title="Format: MM:SS">End</label>
-          <input id="segEditEnd" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="5" />
+        <button class="btn" id="segCloseTop" style="padding: 4px 10px; border-radius: 8px; font-size: 14px; line-height: 1;" title="Tutup modal">✕</button>
+      </div>
+
+      <div class="seg-modal-grid">
+        <!-- Kolom Kiri: Player Preview (9:16 Shorts / 16:9 Full) -->
+        <div class="seg-preview-col">
+          <!-- View Switcher Tabs -->
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 12px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); box-sizing: border-box;">
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="seg-tab-btn active" id="btnSegViewShorts" title="Lihat hasil crop 9:16 di layar HP">
+                📱 Shorts (9:16)
+              </button>
+              <button type="button" class="seg-tab-btn" id="btnSegViewFull" title="Lihat video horizontal asli 16:9 + batas crop">
+                🖥️ Full (16:9)
+              </button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); padding-right: 8px;" id="segViewHint">
+              Simulasi vertikal 9:16
+            </div>
+          </div>
+
+          <!-- 9:16 Shorts View -->
+          <div id="segShortsView" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+            <div style="position: relative; width: 300px; max-width: 100%; margin: 0 auto;">
+              <div class="shorts-phone-frame" id="segShortsContainer"></div>
+              <div id="segModalSubOverlay" class="sub-overlay-text" style="display: none; z-index: 10;"></div>
+            </div>
+            <div class="shorts-mini-ctrls">
+              <button type="button" class="btn" id="btnSegShortsPlayToggle" style="padding: 4px 8px; font-size: 12px; line-height: 1;" title="Play / Pause">
+                ⏸
+              </button>
+              <input type="range" id="segShortsSlider" min="0" max="100" value="0" title="Scrub timeline klip" />
+              <span id="segShortsTimeDisplay" style="font-size: 11px; color: #cbd5e1; font-family: monospace; white-space: nowrap;">00:00 / 00:00</span>
+              <button type="button" class="btn" id="btnSegShortsReplay" style="padding: 4px 8px; font-size: 11px;" title="Ulangi dari awal segmen">
+                ↺
+              </button>
+            </div>
+          </div>
+
+          <!-- 16:9 Full View -->
+          <div id="segFullView" style="display: none; width: 100%;">
+            <div class="player">
+              <div id="segPlayer"></div>
+              <svg id="segCropOverlay" class="cropOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="durMeter" id="durMeterSeg" aria-live="polite"></div>
-      <div style="height:10px"></div>
-      <div class="row">
-        <button class="btn" id="segSetStartNow" title="Set start = posisi player saat ini.">
-          <span class="btnLabel">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 8v8"></path>
-              <path d="M8 12h8"></path>
-              <circle cx="12" cy="12" r="10"></circle>
-            </svg>
-            <span>Set Start = Now</span>
-          </span>
-        </button>
-        <button class="btn" id="segSetEndNow" title="Set end = posisi player saat ini.">
-          <span class="btnLabel">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 7v10"></path>
-              <path d="M8 12h8"></path>
-              <path d="M12 2a10 10 0 1 1 0 20"></path>
-            </svg>
-            <span>Set End = Now</span>
-          </span>
-        </button>
-        <button class="btn primary" id="segApply" title="Terapkan perubahan start/end ke segmen.">
-          <span class="btnLabel">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M9 11l3 3L22 4"></path>
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-            </svg>
-            <span>Apply</span>
-          </span>
-        </button>
-      </div>
-      <div style="height:12px"></div>
-      <div class="row">
-        <button class="btn" id="segClose">
-          <span class="btnLabel">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 6L6 18"></path>
-              <path d="M6 6l12 12"></path>
-            </svg>
-            <span>Tutup</span>
-          </span>
-        </button>
-        <button class="btn primary" id="segUse" title="Pakai start/end ini ke input manual.">
-          <span class="btnLabel">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 5v14"></path>
-              <path d="M5 12h14"></path>
-            </svg>
-            <span>Pakai ke Manual</span>
-          </span>
-        </button>
+
+        <!-- Kolom Kanan: Pengaturan Crop Mode, Edit Waktu Start/End, & Aksi -->
+        <div class="seg-controls-col">
+          <!-- Ganti Crop Mode Langsung di Modal -->
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label for="segCropModeSelect" style="font-size: 13px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                ✂️ Mode Pemotongan (Crop Mode)
+              </label>
+              <span style="font-size: 11px; color: var(--text-muted); background: rgba(56, 189, 248, 0.1); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2);">Live Preview</span>
+            </div>
+            <select id="segCropModeSelect" class="seg-crop-select">
+              <option value="default">default (center crop 9:16)</option>
+              <option value="fit">fit (blurred background / canvas blur)</option>
+              <option value="split_left">split_left (facecam bawah kiri)</option>
+              <option value="split_right">split_right (facecam bawah kanan)</option>
+            </select>
+            <div class="muted" style="font-size: 11px; margin-top: 6px; line-height: 1.4;">
+              Ubah mode crop di sini untuk langsung melihat perubahannya pada simulasi video di sebelah kiri.
+            </div>
+          </div>
+
+          <!-- Status & Edit Start/End -->
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h4 style="margin: 0; font-size: 13px; color: #fff; font-weight: 600;">⏱️ Rentang Waktu (Start / End)</h4>
+              <label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer;" title="Aktif/nonaktif segmen ini untuk diproses.">
+                <input id="segEnabled" type="checkbox" />
+                <span>Enable segmen</span>
+              </label>
+            </div>
+            <div class="muted" style="margin-bottom: 10px; font-size: 11px;">Batas durasi per klip: 03:00 (180 detik).</div>
+
+            <div class="row" style="gap: 10px;">
+              <div style="flex: 1;">
+                <label style="font-size: 11px; margin-bottom: 4px; display: block; color: var(--text-muted);" title="Format: MM:SS">Start (MM:SS)</label>
+                <input id="segEditStart" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="8" style="width: 100%; box-sizing: border-box;" />
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 11px; margin-bottom: 4px; display: block; color: var(--text-muted);" title="Format: MM:SS">End (MM:SS)</label>
+                <input id="segEditEnd" type="text" placeholder="MM:SS" inputmode="numeric" autocomplete="off" maxlength="8" style="width: 100%; box-sizing: border-box;" />
+              </div>
+            </div>
+            <div class="durMeter" id="durMeterSeg" aria-live="polite" style="margin-top: 8px;"></div>
+
+            <div class="row" style="margin-top: 10px; gap: 8px;">
+              <button class="btn" id="segSetStartNow" style="flex: 1; font-size: 11px; padding: 6px;" title="Set start = posisi player saat ini.">
+                <span>📍 Start = Now</span>
+              </button>
+              <button class="btn" id="segSetEndNow" style="flex: 1; font-size: 11px; padding: 6px;" title="Set end = posisi player saat ini.">
+                <span>🏁 End = Now</span>
+              </button>
+              <button class="btn primary" id="segApply" style="flex: 1; font-size: 11px; padding: 6px;" title="Terapkan perubahan start/end ke segmen.">
+                <span>Simpan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bottom Action Buttons -->
+          <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px;">
+            <button class="btn" id="segClose" style="padding: 7px 16px;">
+              <span>Tutup</span>
+            </button>
+            <button class="btn primary" id="segUse" title="Pakai start/end ini ke input manual." style="padding: 7px 16px;">
+              <span>Pakai ke Manual</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="busy" id="busy">
-    <div class="box">
+    <div class="box" style="min-width: 320px; max-width: 440px;">
       <div class="busyTop">
         <span class="spinner big"></span>
-        <div>
-          <div class="busyTitle" id="busyTitle">Loading</div>
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+            <div class="busyTitle" id="busyTitle">Loading</div>
+            <div class="busyPct" id="busyPct"></div>
+          </div>
           <div class="busyMsg" id="busyMsg">Mohon tunggu...</div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Modal Simulasi Shorts -->
-  <div class="modal" id="shortsModal">
-    <div class="box" style="width: 380px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
-      <div style="padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5);">
-        <h3 style="margin: 0; font-size: 16px;">Simulasi Shorts</h3>
-        <button id="closeShortsModal" class="btn" style="padding: 6px 10px; border-radius: 8px;">✕</button>
+      <div class="busyProgressTrack" id="busyProgressTrack">
+        <div class="busyProgressBar" id="busyProgressBar"></div>
       </div>
-      <div style="flex: 1; overflow: hidden; background: #000; position: relative;" id="shortsContainer"></div>
     </div>
   </div>
 

@@ -416,11 +416,27 @@ const setUiDisabled = (on) => {
   });
 };
 
-const setBusyText = (title, msg) => {
+const setBusyProgress = (pct) => {
+  const track = $('busyProgressTrack');
+  const bar = $('busyProgressBar');
+  const pctEl = $('busyPct');
+  if (pct === null || pct === undefined || isNaN(pct) || pct < 0) {
+    if (track) track.style.display = 'none';
+    if (pctEl) pctEl.textContent = '';
+    return;
+  }
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  if (track) track.style.display = 'block';
+  if (bar) bar.style.width = clamped + '%';
+  if (pctEl) pctEl.textContent = clamped + '%';
+};
+
+const setBusyText = (title, msg, pct) => {
   const t = $('busyTitle');
   const m = $('busyMsg');
   if (t && title) t.textContent = title;
   if (m && msg !== undefined && msg !== null) m.textContent = String(msg);
+  if (pct !== undefined) setBusyProgress(pct);
 };
 
 const updateBusyState = () => {
@@ -434,19 +450,21 @@ const updateBusyState = () => {
   if (!on) syncDownloadButtons();
 };
 
-const beginBusy = (title, msg) => {
+const beginBusy = (title, msg, pct) => {
   busyCount += 1;
-  setBusyText(title || 'Loading', msg ?? 'Mohon tunggu...');
+  setBusyProgress(pct !== undefined ? pct : null);
+  setBusyText(title || 'Loading', msg ?? 'Mohon tunggu...', pct);
   updateBusyState();
 };
 
 const endBusy = () => {
   busyCount = Math.max(0, busyCount - 1);
+  if (busyCount === 0) setBusyProgress(null);
   updateBusyState();
 };
 
-const runWithBusy = async (title, msg, fn) => {
-  beginBusy(title, msg);
+const runWithBusy = async (title, msg, fn, pct) => {
+  beginBusy(title, msg, pct);
   try {
     return await fn();
   } finally {
@@ -454,10 +472,16 @@ const runWithBusy = async (title, msg, fn) => {
   }
 };
 
-const setBusyJob = (on, title, msg) => {
+const setBusyJob = (on, title, msg, pct) => {
   busyJob = !!on;
-  if (busyJob) setBusyText(title || 'Memproses...', msg ?? 'Mohon tunggu...');
+  if (busyJob) {
+    setBusyText(title || 'Memproses...', msg ?? 'Mohon tunggu...', pct);
+  } else {
+    setBusyProgress(null);
+  }
   updateBusyState();
+  const btnCancel = $('btnCancelJob');
+  if (btnCancel) btnCancel.style.display = busyJob ? 'inline-block' : 'none';
 };
 
 const setOpenFolderVisible = (on) => {
@@ -518,6 +542,64 @@ const syncGeminiHint = () => {
   hint.textContent = '';
 };
 
+const SUB_SAMPLE_TEXTS = [
+  '🔥 RAHASIA VIRAL SHORTS TERBONGKAR!',
+  'Ternyata plot twist endingnya gak nyangka...',
+  'Jangan lupa like & subscribe ya guys!',
+  'Tips penting buat pemula yang wajib dicoba!',
+  'Buset parah banget hasilnya kayak gini?!'
+];
+let subSampleIndex = 0;
+
+const updateSubtitlePreview = () => {
+  const isSubOn = $('subOn') ? $('subOn').checked : false;
+  const fontName = $('subFont') ? $('subFont').value : 'Arial Black';
+  const fontSize = $('subFontSize') ? parseInt($('subFontSize').value || '22', 10) : 22;
+  const fontColor = $('subFontColor') ? $('subFontColor').value : '#FFFFFF';
+  const pos = $('subPos') ? $('subPos').value : 'middle';
+  const customText = $('subCustomText') ? $('subCustomText').value : SUB_SAMPLE_TEXTS[0];
+
+  const fontSizeVal = $('subFontSizeVal');
+  if (fontSizeVal) fontSizeVal.textContent = fontSize + 'px';
+
+  // Update active pill styling
+  document.querySelectorAll('.sub-color-pill').forEach((btn) => {
+    const col = btn.dataset.color;
+    btn.classList.toggle('active', col && col.toLowerCase() === fontColor.toLowerCase());
+  });
+
+  // Update size preset buttons
+  document.querySelectorAll('.sub-size-preset').forEach((btn) => {
+    const sz = parseInt(btn.dataset.size, 10);
+    btn.classList.toggle('active', sz === fontSize);
+  });
+
+  const updateEl = (el, scaleFactor = 1.0) => {
+    if (!el) return;
+    if (isSubOn) {
+      el.style.display = 'block';
+      el.textContent = customText || SUB_SAMPLE_TEXTS[0];
+      el.style.fontFamily = `"${fontName}", sans-serif`;
+      const scaledSize = Math.max(12, Math.round(fontSize * scaleFactor));
+      el.style.fontSize = scaledSize + 'px';
+      el.style.color = fontColor;
+      el.className = `sub-overlay-text pos-${pos}`;
+    } else {
+      el.style.display = 'none';
+    }
+  };
+
+  // Update Unified Main Player overlays
+  updateEl($('mainShortsSubOverlay'), 1.0);
+  updateEl($('mainFullSubOverlay'), 0.95);
+
+  // Update Segment Modal overlay
+  updateEl($('segModalSubOverlay'), 1.05);
+
+  // Fallback for legacy mockup if present
+  updateEl($('subOverlayText'), 0.72);
+};
+
 const applyCfg = (cfg) => {
   if (cfg.crop_mode) $('crop').value = cfg.crop_mode;
   if (cfg.crop_preview !== undefined && $('cropPrev')) $('cropPrev').checked = !!cfg.crop_preview;
@@ -526,6 +608,9 @@ const applyCfg = (cfg) => {
   if (cfg.whisper_model) $('model').value = cfg.whisper_model;
   if (cfg.subtitle_language && $('subLang')) $('subLang').value = cfg.subtitle_language;
   if (cfg.subtitle_position) $('subPos').value = cfg.subtitle_position;
+  if (cfg.subtitle_font_name && $('subFont')) $('subFont').value = cfg.subtitle_font_name;
+  if (cfg.subtitle_font_size && $('subFontSize')) $('subFontSize').value = cfg.subtitle_font_size;
+  if (cfg.subtitle_font_color && $('subFontColor')) $('subFontColor').value = cfg.subtitle_font_color;
   if (cfg.preview_seconds) $('previewSecs').value = cfg.preview_seconds;
   geminiKeyStoredOnServer = !!cfg.has_gemini_key;
   if (cfg.has_gemini_key && $('geminiKey') && !$('geminiKey').value) {
@@ -534,6 +619,7 @@ const applyCfg = (cfg) => {
   syncGeminiHint();
   syncSub();
   updateCropPreview();
+  updateSubtitlePreview();
 };
 
 const collectCfgLocal = () => ({
@@ -544,6 +630,9 @@ const collectCfgLocal = () => ({
   whisper_model: $('model').value,
   subtitle_language: $('subLang') ? $('subLang').value : 'id',
   subtitle_position: $('subPos').value,
+  subtitle_font_name: $('subFont') ? $('subFont').value : 'Arial Black',
+  subtitle_font_size: $('subFontSize') ? parseInt($('subFontSize').value || '22', 10) : 22,
+  subtitle_font_color: $('subFontColor') ? $('subFontColor').value : '#FFFFFF',
   preview_seconds: parseInt($('previewSecs').value || '30', 10),
 });
 
@@ -561,12 +650,20 @@ const persistCfg = async () => {
   } catch {}
 };
 
-
-
 const syncSub = () => {
-  $('model').disabled = !$('subOn').checked;
-  if ($('subLang')) $('subLang').disabled = !$('subOn').checked;
-  $('subPos').disabled = !$('subOn').checked;
+  const on = $('subOn').checked;
+  $('model').disabled = !on;
+  if ($('subLang')) $('subLang').disabled = !on;
+  $('subPos').disabled = !on;
+  if ($('subFont')) $('subFont').disabled = !on;
+  if ($('subFontSize')) $('subFontSize').disabled = !on;
+  if ($('subFontColor')) $('subFontColor').disabled = !on;
+  if ($('subCustomText')) $('subCustomText').disabled = !on;
+  const panel = $('subConfigPanel');
+  if (panel) {
+    panel.style.opacity = on ? '1' : '0.45';
+  }
+  updateSubtitlePreview();
 };
 
 const updateCropPreview = () => {
@@ -640,6 +737,74 @@ const ensureYTApi = (() => {
   };
 })();
 
+let currentSortCol = 'score'; // 'score' | 'start' | 'end' | 'dur'
+let currentSortDir = 'desc'; // 'asc' | 'desc'
+
+const applySorting = () => {
+  segments.sort((a, b) => {
+    let valA, valB;
+    if (currentSortCol === 'start') {
+      valA = a.start | 0;
+      valB = b.start | 0;
+    } else if (currentSortCol === 'end') {
+      valA = a.end | 0;
+      valB = b.end | 0;
+    } else if (currentSortCol === 'dur') {
+      valA = Math.max(0, (a.end | 0) - (a.start | 0));
+      valB = Math.max(0, (b.end | 0) - (b.start | 0));
+    } else {
+      valA = Number(a.score ?? 0);
+      valB = Number(b.score ?? 0);
+    }
+
+    if (valA === valB) {
+      return (a.start | 0) - (b.start | 0);
+    }
+
+    return currentSortDir === 'asc' ? valA - valB : valB - valA;
+  });
+
+  updateSortUI();
+};
+
+const updateSortUI = () => {
+  const sel = $('segSortSelect');
+  if (sel) {
+    const val = `${currentSortCol}_${currentSortDir}`;
+    if (sel.value !== val) sel.value = val;
+  }
+
+  const btnDir = $('btnToggleSortDir');
+  if (btnDir) {
+    btnDir.title = `Arah urutan saat ini: ${currentSortDir.toUpperCase()} (klik untuk membalik)`;
+    btnDir.textContent = currentSortDir === 'asc' ? '▲ Asc' : '▼ Desc';
+    btnDir.style.color = currentSortDir === 'asc' ? '#38bdf8' : '#a78bfa';
+  }
+
+  document.querySelectorAll('.th-sortable').forEach((th) => {
+    const col = th.dataset.col;
+    const ind = $('sortInd_' + col);
+    if (col === currentSortCol) {
+      th.classList.add('active-sort');
+      if (ind) ind.textContent = currentSortDir === 'asc' ? '▲' : '▼';
+    } else {
+      th.classList.remove('active-sort');
+      if (ind) ind.textContent = '';
+    }
+  });
+};
+
+const handleHeaderSort = (col) => {
+  if (currentSortCol === col) {
+    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortCol = col;
+    currentSortDir = col === 'start' || col === 'end' ? 'asc' : 'desc';
+  }
+  applySorting();
+  renderSegs();
+};
+
 const renderSegs = () => {
   const tbody = $('segTable').querySelector('tbody');
   tbody.innerHTML = '';
@@ -663,6 +828,7 @@ const renderSegs = () => {
         `;
     tbody.appendChild(tr);
   });
+  updateSortUI();
   syncSegBulkButtons();
   if (activeSegIdx !== null && segments[activeSegIdx] && $('segEnabled')) {
     $('segEnabled').checked = !!segments[activeSegIdx].enabled;
@@ -690,11 +856,41 @@ const renderSegs = () => {
   );
 };
 
+let segViewMode = 'shorts'; // 'shorts' | 'full'
+let segShortsPlayers = [];
+let segShortsTimer = null;
+let segShortsPlaying = true;
+
 const openSegModal = () => {
   $('segModal').classList.add('on');
+  updateSubtitlePreview();
 };
-const closeSegModal = () => {
-  $('segModal').classList.remove('on');
+
+const updateSegShortsPlayBtn = (playing) => {
+  const btn = $('btnSegShortsPlayToggle');
+  if (btn) btn.textContent = playing ? '⏸' : '▶';
+};
+
+const updateSegShortsTimeDisplay = (currSec) => {
+  const el = $('segShortsTimeDisplay');
+  if (!el) return;
+  const c = Math.max(0, Math.floor(currSec));
+  const tot = Math.max(0, segEnd - segStart);
+  const prog = Math.max(0, c - segStart);
+  el.textContent = `${fmt(c)} (${fmt(prog)}/${fmt(tot)})`;
+};
+
+const destroySegShortsPlayers = () => {
+  if (segShortsTimer) {
+    clearInterval(segShortsTimer);
+    segShortsTimer = null;
+  }
+  segShortsPlayers.forEach((p) => {
+    try { if (p && p.destroy) p.destroy(); } catch {}
+  });
+  segShortsPlayers = [];
+  const c = $('segShortsContainer');
+  if (c) c.innerHTML = '';
 };
 
 const destroySegPlayer = () => {
@@ -704,8 +900,180 @@ const destroySegPlayer = () => {
   segPlayer = null;
   const holder = $('segPlayer');
   if (holder) holder.innerHTML = '';
+};
+
+const closeSegModal = () => {
+  $('segModal').classList.remove('on');
+  destroySegPlayer();
+  destroySegShortsPlayers();
   segStart = 0;
   segEnd = 0;
+};
+
+const getSegCurrentTime = () => {
+  if (segViewMode === 'full') {
+    if (segPlayer && segPlayer.getCurrentTime) {
+      try { return Math.floor(segPlayer.getCurrentTime() || 0); } catch {}
+    }
+  } else {
+    if (segShortsPlayers.length > 0 && segShortsPlayers[0]?.getCurrentTime) {
+      try { return Math.floor(segShortsPlayers[0].getCurrentTime() || 0); } catch {}
+    }
+  }
+  return segStart;
+};
+
+const initSegShortsPlayer = async (startTime) => {
+  destroySegShortsPlayers();
+  if (!currentVideoId) return;
+  await ensureYTApi();
+
+  const c = $('segShortsContainer');
+  if (!c) return;
+  c.innerHTML = '';
+
+  const mode = ($('crop')?.value || 'default').trim();
+  const startAt = startTime !== undefined ? startTime : segStart;
+  segShortsPlaying = true;
+  updateSegShortsPlayBtn(true);
+
+  const createPlayer = (boxClass, ifClass, isMuted) => {
+    const box = document.createElement('div');
+    box.className = `shorts-crop-box ${boxClass}`;
+    
+    const ifHolder = document.createElement('div');
+    ifHolder.className = `shorts-iframe ${ifClass}`;
+    box.appendChild(ifHolder);
+    c.appendChild(box);
+    
+    const p = new YT.Player(ifHolder, {
+      videoId: currentVideoId,
+      playerVars: { 
+        autoplay: 1, 
+        controls: 0, 
+        rel: 0, 
+        modestbranding: 1, 
+        fs: 0, 
+        disablekb: 1, 
+        start: Math.floor(startAt), 
+        mute: 1 
+      },
+      events: {
+        onReady: (e) => {
+          const iframe = e.target.getIframe();
+          if (iframe) iframe.className = `shorts-iframe ${ifClass}`;
+          try { e.target.seekTo(startAt, true); } catch {}
+          try { e.target.playVideo(); } catch {}
+          if (!isMuted) {
+            try { e.target.unMute(); } catch {}
+          }
+        },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.ENDED) {
+            segShortsPlayers.forEach((pl) => {
+              try { pl.seekTo(segStart, true); pl.playVideo(); } catch {}
+            });
+          }
+        }
+      }
+    });
+    segShortsPlayers.push(p);
+    return p;
+  };
+
+  if (mode === 'split_left' || mode === 'split_right') {
+    createPlayer('shorts-box-top', 'shorts-if-top', false);
+    createPlayer('shorts-box-bottom', mode === 'split_left' ? 'shorts-if-bottom-left' : 'shorts-if-bottom-right', true);
+  } else if (mode === 'fit') {
+    createPlayer('shorts-box-fit', 'shorts-if-fit', false);
+  } else {
+    createPlayer('shorts-box-default', 'shorts-if-default', false);
+  }
+
+  const slider = $('segShortsSlider');
+  if (slider) {
+    slider.min = String(segStart);
+    slider.max = String(Math.max(segStart + 1, segEnd));
+    slider.value = String(startAt);
+  }
+  updateSegShortsTimeDisplay(startAt);
+
+  segShortsTimer = setInterval(() => {
+    if (segShortsPlayers.length === 0) return;
+    const p0 = segShortsPlayers[0];
+    if (!p0 || !p0.getCurrentTime) return;
+    try {
+      const ct = p0.getCurrentTime();
+      if (ct >= segEnd && segEnd > segStart) {
+        segShortsPlayers.forEach((pl) => {
+          try { pl.seekTo(segStart, true); } catch {}
+        });
+        updateSegShortsTimeDisplay(segStart);
+        if (slider) slider.value = String(segStart);
+      } else {
+        updateSegShortsTimeDisplay(ct);
+        if (slider && !slider.matches(':active')) {
+          slider.value = String(Math.floor(ct));
+        }
+      }
+    } catch {}
+  }, 250);
+};
+
+const initSegFullPlayer = async (startTime) => {
+  destroySegPlayer();
+  if (!currentVideoId) return;
+  await ensureYTApi();
+
+  const startAt = startTime !== undefined ? startTime : segStart;
+
+  segPlayer = new YT.Player('segPlayer', {
+    height: '100%',
+    width: '100%',
+    videoId: currentVideoId,
+    playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1, start: Math.floor(startAt), end: segEnd },
+    events: {
+      onReady: (e) => {
+        try {
+          e.target.setPlaybackQuality('large');
+        } catch {}
+        try {
+          e.target.seekTo(startAt, true);
+        } catch {}
+      },
+    },
+  });
+  updateCropPreview();
+};
+
+const setSegViewMode = async (mode) => {
+  if (mode === segViewMode) return;
+  const currentCt = getSegCurrentTime();
+  segViewMode = mode;
+
+  const btnShorts = $('btnSegViewShorts');
+  const btnFull = $('btnSegViewFull');
+  const viewShorts = $('segShortsView');
+  const viewFull = $('segFullView');
+  const hint = $('segViewHint');
+
+  if (mode === 'shorts') {
+    if (btnShorts) btnShorts.classList.add('active');
+    if (btnFull) btnFull.classList.remove('active');
+    if (viewShorts) viewShorts.style.display = 'flex';
+    if (viewFull) viewFull.style.display = 'none';
+    if (hint) hint.textContent = 'Simulasi vertikal 9:16';
+    destroySegPlayer();
+    await initSegShortsPlayer(currentCt);
+  } else {
+    if (btnShorts) btnShorts.classList.remove('active');
+    if (btnFull) btnFull.classList.add('active');
+    if (viewShorts) viewShorts.style.display = 'none';
+    if (viewFull) viewFull.style.display = 'block';
+    if (hint) hint.textContent = 'Video penuh 16:9 + batas crop';
+    destroySegShortsPlayers();
+    await initSegFullPlayer(currentCt);
+  }
 };
 
 const openSegPreview = async (idx) => {
@@ -740,26 +1108,31 @@ const openSegPreview = async (idx) => {
     $('segEditEnd').value = fmt(end);
     setDurMeter($('durMeterSeg'), start, end);
 
+    const cropSelect = $('segCropModeSelect');
+    if (cropSelect) {
+      const mode = ($('crop')?.value || 'default').trim();
+      cropSelect.value = mode;
+    }
+
     destroySegPlayer();
+    destroySegShortsPlayers();
     openSegModal();
 
-    await ensureYTApi();
-    segPlayer = new YT.Player('segPlayer', {
-      height: '100%',
-      width: '100%',
-      videoId: currentVideoId,
-      playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1, start: start, end: end },
-      events: {
-        onReady: (e) => {
-          try {
-            e.target.setPlaybackQuality('large');
-          } catch {}
-          try {
-            e.target.seekTo(start, true);
-          } catch {}
-        },
-      },
-    });
+    if (segViewMode === 'shorts') {
+      if ($('segShortsView')) $('segShortsView').style.display = 'flex';
+      if ($('segFullView')) $('segFullView').style.display = 'none';
+      if ($('btnSegViewShorts')) $('btnSegViewShorts').classList.add('active');
+      if ($('btnSegViewFull')) $('btnSegViewFull').classList.remove('active');
+      if ($('segViewHint')) $('segViewHint').textContent = 'Simulasi vertikal 9:16';
+      await initSegShortsPlayer(start);
+    } else {
+      if ($('segShortsView')) $('segShortsView').style.display = 'none';
+      if ($('segFullView')) $('segFullView').style.display = 'block';
+      if ($('btnSegViewShorts')) $('btnSegViewShorts').classList.remove('active');
+      if ($('btnSegViewFull')) $('btnSegViewFull').classList.add('active');
+      if ($('segViewHint')) $('segViewHint').textContent = 'Video penuh 16:9 + batas crop';
+      await initSegFullPlayer(start);
+    }
   });
 };
 
@@ -857,8 +1230,10 @@ const fillSummary = () => {
   };
 
 
+  const fontName = $('subFont') ? $('subFont').value : 'Arial Black';
+  const fontSize = $('subFontSize') ? $('subFontSize').value : '22';
   top.appendChild(mkKv('Crop mode', crop || '-'));
-  top.appendChild(mkKv('Subtitle', subOn ? 'ON • Model: ' + model : 'OFF'));
+  top.appendChild(mkKv('Subtitle', subOn ? `ON • Model: ${model} • Font: ${fontName} (${fontSize}px)` : 'OFF'));
   top.appendChild(mkKv('Total', segs.length + ' klip • ' + fmt(totalSec)));
   root.appendChild(top);
 
@@ -990,15 +1365,33 @@ const enforceMaxDur = (start, end, label) => {
   return { start, end: newEnd, changed: true };
 };
 
+const MIN_SHORTS_DUR = 15; // Batas minimal durasi resmi YouTube Shorts (15 detik)
+
 const enforceAllSegments = (label) => {
   let changed = 0;
   for (const s of segments || []) {
-    if (!s || !s.enabled) continue;
-    const st = Number(s.start);
-    const en = Number(s.end);
+    if (!s) continue;
+    let st = Number(s.start || 0);
+    let en = Number(s.end || 0);
     if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
-    if (en <= st) continue;
-    const capped = enforceMaxDur(st, en, label || 'segmen');
+
+    // Jika durasi terlalu pendek (< 15 detik, misalnya cuma 1 detik), otomatis ekspansi ke standar Shorts (30 detik)
+    if (en - st < MIN_SHORTS_DUR) {
+      const targetDur = 30;
+      let newEnd = st + targetDur;
+      if (durationSec > 0 && newEnd > durationSec) {
+        newEnd = durationSec;
+        if (durationSec >= MIN_SHORTS_DUR) {
+          st = Math.max(0, newEnd - targetDur);
+          s.start = st;
+        }
+      }
+      s.end = newEnd;
+      appendLog(`[durasi] ${label || 'segmen'} durasi terlalu pendek (< 15s), auto-expand ke durasi Shorts standar ${fmt(newEnd - s.start)}`);
+      changed++;
+    }
+
+    const capped = enforceMaxDur(s.start, s.end, label || 'segmen');
     if (capped.changed) {
       s.end = capped.end;
       changed++;
@@ -1032,7 +1425,8 @@ const poll = async () => {
     if (busyJob && isRunning) {
       const pct = Math.max(0, Math.min(100, Number(data.percent || 0)));
       const st = (data.status || '').trim();
-      setBusyText('Sedang memproses...', (st ? st + ' • ' : '') + pct.toFixed(0) + '%');
+      const etaStr = data.eta ? ` • ETA: ${data.eta}` : '';
+      setBusyText('Sedang memproses...', (st ? st : 'Memproses klip video...') + etaStr, pct);
     }
     let logText = data.logs || '';
     if (data.error) {
@@ -1101,6 +1495,9 @@ const startJob = async () => {
     whisper_model: $('model').value,
     subtitle_language: $('subLang') ? $('subLang').value : 'id',
     subtitle_position: $('subPos').value,
+    subtitle_font_name: $('subFont') ? $('subFont').value : 'Arial Black',
+    subtitle_font_size: $('subFontSize') ? parseInt($('subFontSize').value || '22', 10) : 22,
+    subtitle_font_color: $('subFontColor') ? $('subFontColor').value : '#FFFFFF',
     output_dir: null,
     use_gemini_suggestions: useGemini,
     gemini_api_key: useGemini ? $('geminiKey').value.trim() : null,
@@ -1147,7 +1544,11 @@ const loadInfo = async () => {
 
 const waitMainPlayer = async () => {
   for (let i = 0; i < 50; i++) {
-    if (player && player.getCurrentTime && player.getPlayerState) return true;
+    if (mainViewMode === 'shorts') {
+      if (mainShortsPlayers.length > 0 && mainShortsPlayers[0]?.getCurrentTime) return true;
+    } else {
+      if (player && player.getCurrentTime && player.getPlayerState) return true;
+    }
     await new Promise((r) => setTimeout(r, 80));
   }
   return false;
@@ -1155,6 +1556,7 @@ const waitMainPlayer = async () => {
 
 const loadHeatmap = async () => {
   const url = validateUrl();
+  setBusyText('Memeriksa video...', 'Mengambil informasi durasi & metadata video...', 10);
 
   const tAll0 = performance.now();
 
@@ -1182,9 +1584,12 @@ const loadHeatmap = async () => {
   applyVideoInfo(infoData);
   persistCfg();
 
+  setBusyText('Memindai Heatmap...', 'Mencari titik puncak penonton (Most Replayed)...', 35);
+
   let heatmapErr = null;
   try {
     const tHm0 = performance.now();
+    setBusyText('Memindai Heatmap...', 'Menganalisis kurva Most Replayed dari YouTube...', 50);
     const res = await fetch(apiUrl('/api/heatmap'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1204,10 +1609,12 @@ const loadHeatmap = async () => {
     segments = data.segments || [];
     enforceAllSegments('heatmap');
     if (!segments.length) throw new Error('Heatmap kosong: video ini tidak punya Most Replayed, atau parsing gagal.');
-    segments.sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0) || (a.start | 0) - (b.start | 0) || (a.end | 0) - (b.end | 0));
+    setBusyText('Menyusun segmen...', 'Menerapkan batas durasi Shorts & sorting...', 90);
+    applySorting();
     activeSegIdx = null;
     const tRender0 = performance.now();
     renderSegs();
+    setBusyText('Selesai!', 'Segmen berhasil dimuat.', 100);
     const tRenderMs = performance.now() - tRender0;
     if (heatmapDebug) {
       appendLog(`[heatmap] video_info ${tInfoMs.toFixed(0)}ms`);
@@ -1222,6 +1629,7 @@ const loadHeatmap = async () => {
 
   const txt = $('heatmapText');
   if (txt) txt.textContent = 'Loading (backup AI)...';
+  setBusyText('Backup AI...', 'Memulai analisis transkrip cadangan...', 15);
 
   try {
     const res = await fetch(apiUrl('/api/ai_segments'), {
@@ -1245,26 +1653,27 @@ const loadHeatmap = async () => {
     let aiSegments = [];
     
     while (!aiJobDone) {
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 600));
       const sRes = await fetch(apiUrl('/api/status/') + aiJobId);
       const sData = await sRes.json();
       if (!sData.ok) continue;
       
-      if (sData.status) {
-         setBusyText('Backup AI...', sData.status);
-      }
+      const pct = typeof sData.percent === 'number' && sData.percent > 0 ? sData.percent : 20;
+      const statusText = sData.status || 'Menganalisis konten video...';
+      setBusyText('Backup AI...', statusText, pct);
       
       if (sData.done) {
         aiJobDone = true;
         if (sData.error) throw new Error(sData.error);
         aiSegments = sData.segments || [];
+        setBusyText('Backup AI...', 'Menyusun segmen selesai!', 100);
       }
     }
     
     segments = aiSegments;
     enforceAllSegments('AI');
     if (!segments.length) throw new Error('AI segments kosong: transcript tidak cukup jelas, atau analisis gagal.');
-    segments.sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0) || (a.start | 0) - (b.start | 0) || (a.end | 0) - (b.end | 0));
+    applySorting();
     activeSegIdx = null;
     renderSegs();
   } catch (aiErr) {
@@ -1290,7 +1699,7 @@ const addSeg = () => {
   }
 
   segments.push({ enabled: true, start: s, end: end2 });
-  segments.sort((a, b) => a.start - b.start || a.end - b.end);
+  applySorting();
   renderSegs();
 };
 
@@ -1304,6 +1713,10 @@ const closeModal = () => {
 
 $('crop').addEventListener('change', () => {
   updateCropPreview();
+  if (mainViewMode === 'shorts' && currentVideoId) {
+    const ct = getMainCurrentTime();
+    initMainShortsPlayer(ct);
+  }
   persistCfg();
 });
 if ($('cropPrev')) $('cropPrev').addEventListener('change', () => {
@@ -1313,6 +1726,69 @@ if ($('cropPrev')) $('cropPrev').addEventListener('change', () => {
 $('subOn').addEventListener('change', () => {
   syncSub();
   persistCfg();
+});
+if ($('subLang')) $('subLang').addEventListener('change', persistCfg);
+if ($('subPos')) {
+  $('subPos').addEventListener('change', () => {
+    updateSubtitlePreview();
+    persistCfg();
+  });
+}
+if ($('subFont')) {
+  $('subFont').addEventListener('change', () => {
+    updateSubtitlePreview();
+    persistCfg();
+  });
+}
+if ($('subFontSize')) {
+  $('subFontSize').addEventListener('input', () => {
+    updateSubtitlePreview();
+  });
+  $('subFontSize').addEventListener('change', () => {
+    updateSubtitlePreview();
+    persistCfg();
+  });
+}
+if ($('subFontColor')) {
+  $('subFontColor').addEventListener('input', () => {
+    updateSubtitlePreview();
+  });
+  $('subFontColor').addEventListener('change', () => {
+    updateSubtitlePreview();
+    persistCfg();
+  });
+}
+if ($('subCustomText')) {
+  $('subCustomText').addEventListener('input', () => {
+    updateSubtitlePreview();
+  });
+}
+if ($('btnCycleSubSample')) {
+  $('btnCycleSubSample').addEventListener('click', () => {
+    subSampleIndex = (subSampleIndex + 1) % SUB_SAMPLE_TEXTS.length;
+    if ($('subCustomText')) $('subCustomText').value = SUB_SAMPLE_TEXTS[subSampleIndex];
+    updateSubtitlePreview();
+  });
+}
+document.querySelectorAll('.sub-color-pill').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const col = btn.dataset.color;
+    if (col && $('subFontColor')) {
+      $('subFontColor').value = col;
+      updateSubtitlePreview();
+      persistCfg();
+    }
+  });
+});
+document.querySelectorAll('.sub-size-preset').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const sz = btn.dataset.size;
+    if (sz && $('subFontSize')) {
+      $('subFontSize').value = sz;
+      updateSubtitlePreview();
+      persistCfg();
+    }
+  });
 });
 $('model').addEventListener('change', persistCfg);
 $('previewSecs').addEventListener('change', persistCfg);
@@ -1346,40 +1822,133 @@ const showResultModal = (data) => {
     btnDownloadAll.style.display = files.length > 1 ? 'inline-flex' : 'none';
   }
   
-  subtext.textContent = 'Berhasil memproses ' + data.success_count + ' klip. Anda bisa melihat previewnya di bawah atau langsung mengunduhnya.';
+  const aiMap = data.ai_metadata || {};
+  const hasAnyAi = Object.keys(aiMap).length > 0;
   
-  files.forEach((filename) => {
+  subtext.textContent = 'Berhasil memproses ' + data.success_count + ' klip. ' + (hasAnyAi ? 'Saran judul clickbait, caption & hashtag dari AI siap disalin!' : 'Anda bisa melihat preview atau mengunduh video di bawah.');
+  
+  files.forEach((filename, idx) => {
     const url = apiUrl('/api/download/' + jobId + '/' + encodeURIComponent(filename));
+    const meta = aiMap[filename];
     
-    const div = document.createElement('div');
-    div.className = 'result-item';
+    const card = document.createElement('div');
+    card.className = 'result-card';
     
-    const title = document.createElement('div');
-    title.className = 'result-item-title';
-    title.textContent = filename;
+    // Left column: Video preview & download button
+    const videoCol = document.createElement('div');
+    videoCol.className = 'result-video-col';
+    
+    const titleEl = document.createElement('div');
+    titleEl.className = 'result-item-title';
+    titleEl.textContent = 'Clip #' + (idx + 1) + ': ' + filename;
     
     const vid = document.createElement('video');
     vid.controls = true;
     vid.preload = 'metadata';
     vid.src = url;
     
-    const acts = document.createElement('div');
-    acts.className = 'result-actions';
-    
     const btnDl = document.createElement('a');
     btnDl.className = 'btn primary';
     btnDl.href = url;
     btnDl.download = filename;
     btnDl.target = '_blank';
-    btnDl.textContent = '⬇ Unduh Klip';
+    btnDl.textContent = '⬇ Unduh Klip (MP4)';
     btnDl.style.textAlign = 'center';
     btnDl.style.display = 'block';
+    btnDl.style.fontSize = '12px';
+    btnDl.style.padding = '8px';
     
-    acts.appendChild(title);
-    acts.appendChild(btnDl);
-    div.appendChild(vid);
-    div.appendChild(acts);
-    grid.appendChild(div);
+    videoCol.appendChild(titleEl);
+    videoCol.appendChild(vid);
+    videoCol.appendChild(btnDl);
+    card.appendChild(videoCol);
+    
+    // Right column: AI Content (Titles, Caption, Hashtags)
+    const metaCol = document.createElement('div');
+    metaCol.className = 'result-meta-col';
+    
+    if (meta && (meta.titles?.length || meta.caption || meta.hashtags?.length)) {
+      // Titles block
+      if (meta.titles && meta.titles.length) {
+        const titleBlock = document.createElement('div');
+        titleBlock.className = 'meta-block';
+        titleBlock.innerHTML = '<div class="meta-label">💡 Rekomendasi Judul Shorts:</div>';
+        
+        meta.titles.forEach((t) => {
+          const row = document.createElement('div');
+          row.className = 'meta-copy-row';
+          row.innerHTML = '<span class="meta-text">' + escapeHtml(t) + '</span><button class="btn-copy" type="button">📋 Salin</button>';
+          row.querySelector('.btn-copy').addEventListener('click', (e) => {
+            navigator.clipboard.writeText(t);
+            e.target.textContent = '✅ Disalin!';
+            e.target.classList.add('copied');
+            setTimeout(() => {
+              e.target.textContent = '📋 Salin';
+              e.target.classList.remove('copied');
+            }, 2000);
+          });
+          titleBlock.appendChild(row);
+        });
+        metaCol.appendChild(titleBlock);
+      }
+      
+      // Caption block
+      if (meta.caption) {
+        const capBlock = document.createElement('div');
+        capBlock.className = 'meta-block';
+        capBlock.innerHTML = 
+          '<div class="meta-header-row">' +
+            '<span class="meta-label">📝 Caption Video:</span>' +
+            '<button class="btn-copy" type="button">📋 Salin Caption</button>' +
+          '</div>' +
+          '<div class="meta-box-text">' + escapeHtml(meta.caption) + '</div>';
+        
+        capBlock.querySelector('.btn-copy').addEventListener('click', (e) => {
+          navigator.clipboard.writeText(meta.caption);
+          e.target.textContent = '✅ Disalin!';
+          e.target.classList.add('copied');
+          setTimeout(() => {
+            e.target.textContent = '📋 Salin Caption';
+            e.target.classList.remove('copied');
+          }, 2000);
+        });
+        metaCol.appendChild(capBlock);
+      }
+      
+      // Hashtags block
+      if (meta.hashtags && meta.hashtags.length) {
+        const tagStr = meta.hashtags.join(' ');
+        const tagBlock = document.createElement('div');
+        tagBlock.className = 'meta-block';
+        tagBlock.innerHTML = 
+          '<div class="meta-header-row">' +
+            '<span class="meta-label">🏷️ Hashtags Viral:</span>' +
+            '<button class="btn-copy" type="button">📋 Salin Tags</button>' +
+          '</div>' +
+          '<div class="meta-box-text">' + escapeHtml(tagStr) + '</div>';
+        
+        tagBlock.querySelector('.btn-copy').addEventListener('click', (e) => {
+          navigator.clipboard.writeText(tagStr);
+          e.target.textContent = '✅ Disalin!';
+          e.target.classList.add('copied');
+          setTimeout(() => {
+            e.target.textContent = '📋 Salin Tags';
+            e.target.classList.remove('copied');
+          }, 2000);
+        });
+        metaCol.appendChild(tagBlock);
+      }
+    } else {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'meta-block';
+      placeholder.innerHTML = 
+        '<div class="meta-label" style="color:var(--muted)">ℹ️ Info AI Metadata:</div>' +
+        '<div class="meta-box-text" style="color:var(--muted)">Saran judul clickbait dan caption otomatis tidak diaktifkan pada proses ini. Untuk mengaktifkannya, masukkan Gemini API Key dan pilih opsi "Ya" pada kartu Output & Subtitle sebelum memproses.</div>';
+      metaCol.appendChild(placeholder);
+    }
+    
+    card.appendChild(metaCol);
+    grid.appendChild(card);
   });
   
   modal.classList.add('on');
@@ -1412,18 +1981,28 @@ $('resultBtnNew')?.addEventListener('click', () => {
 });
 
 $('resultBtnDownloadAll')?.addEventListener('click', () => {
-  if (!lastJobStatus || !lastJobStatus.files) return;
-  // Fallback if no zip endpoint: just trigger download for all
-  lastJobStatus.files.forEach((f) => {
-    const a = document.createElement('a');
-    a.href = apiUrl('/api/download/' + jobId + '/' + encodeURIComponent(f));
-    a.download = f;
-    a.target = '_blank';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => document.body.removeChild(a), 100);
-  });
+  if (!jobId) return;
+  window.location.href = apiUrl('/api/download-zip/' + encodeURIComponent(jobId));
+});
+
+$('btnCancelJob')?.addEventListener('click', async () => {
+  if (!jobId) return;
+  if (!confirm('Yakin ingin membatalkan proses klip yang sedang berjalan?')) return;
+  try {
+    $('status').textContent = 'Membatalkan proses...';
+    const btnCancel = $('btnCancelJob');
+    if (btnCancel) btnCancel.disabled = true;
+    const res = await fetch(apiUrl('/api/cancel/' + encodeURIComponent(jobId)), { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      uiAlert('Job berhasil dibatalkan.', { type: 'info' });
+    }
+  } catch (e) {
+    uiAlert('Gagal membatalkan job: ' + errText(e), { type: 'error' });
+  } finally {
+    const btnCancel = $('btnCancelJob');
+    if (btnCancel) btnCancel.disabled = false;
+  }
 });
 
 const updateManualDur = (clamp = false) => {
@@ -1522,6 +2101,29 @@ $('segDeselectAll').addEventListener('click', () => {
   renderSegs();
   persistCfg();
 });
+
+$('segSortSelect')?.addEventListener('change', (e) => {
+  const parts = e.target.value.split('_');
+  if (parts.length === 2) {
+    currentSortCol = parts[0];
+    currentSortDir = parts[1];
+    applySorting();
+    renderSegs();
+  }
+});
+
+$('btnToggleSortDir')?.addEventListener('click', () => {
+  currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+  applySorting();
+  renderSegs();
+});
+
+document.querySelectorAll('.th-sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (col) handleHeaderSort(col);
+  });
+});
 $('addSeg').addEventListener('click', async () => {
   try {
     await runWithBusy('Menambah segmen...', 'Menyiapkan data video...', async () => {
@@ -1562,47 +2164,104 @@ $('timeline').addEventListener('input', () => {
   const v = parseInt($('timeline').value || '0', 10);
   $('tCur').textContent = fmt(v);
   syncRangeFill($('timeline'));
-  if (playerReady && player) player.seekTo(v, true);
+  if (mainViewMode === 'shorts') {
+    mainShortsPlayers.forEach((p) => {
+      try { p.seekTo(v, true); } catch {}
+    });
+  } else {
+    if (playerReady && player) player.seekTo(v, true);
+  }
 });
 
 $('play').addEventListener('click', async () => {
   try {
     if (!currentVideoId) await loadInfo();
-    if (!(await waitMainPlayer())) return;
-    const st = player.getPlayerState();
-    if (st === 1) player.pauseVideo();
-    else player.playVideo();
+    if (mainViewMode === 'shorts') {
+      if (mainShortsPlayers.length === 0) {
+        await initMainShortsPlayer(getMainCurrentTime());
+      }
+      mainShortsPlaying = !mainShortsPlaying;
+      mainShortsPlayers.forEach((p) => {
+        try {
+          if (mainShortsPlaying) p.playVideo();
+          else p.pauseVideo();
+        } catch {}
+      });
+    } else {
+      if (!(await waitMainPlayer())) return;
+      const st = player.getPlayerState();
+      if (st === 1) {
+        player.pauseVideo();
+        mainShortsPlaying = false;
+      } else {
+        player.playVideo();
+        mainShortsPlaying = true;
+      }
+    }
   } catch (e) {
     uiAlert(errText(e), { type: 'error' });
   }
 });
+
 $('stop').addEventListener('click', async () => {
   try {
     if (!currentVideoId) await loadInfo();
-    if (!(await waitMainPlayer())) return;
     previewStopAt = null;
-    player.pauseVideo();
-    player.seekTo(0, true);
+    mainShortsPlaying = false;
+    if (mainViewMode === 'shorts') {
+      mainShortsPlayers.forEach((p) => {
+        try {
+          p.pauseVideo();
+          p.seekTo(0, true);
+        } catch {}
+      });
+    } else {
+      if (!(await waitMainPlayer())) return;
+      player.pauseVideo();
+      player.seekTo(0, true);
+    }
+    if ($('timeline')) $('timeline').value = '0';
+    if ($('tCur')) $('tCur').textContent = '00:00';
+    syncRangeFill($('timeline'));
   } catch (e) {
     uiAlert(errText(e), { type: 'error' });
   }
 });
+
 $('playPreview').addEventListener('click', async () => {
   try {
     if (!currentVideoId) await loadInfo();
-    if (!(await waitMainPlayer())) return;
     const s = parseInt(($('previewSecs').value || '30'), 10);
     if (Number.isNaN(s) || s < 5 || s > 600) {
       uiAlert('Preview detik harus 5-600', { type: 'warn' });
       return;
     }
     previewStopAt = s;
-    player.seekTo(0, true);
-    player.playVideo();
+    mainShortsPlaying = true;
+    if (mainViewMode === 'shorts') {
+      if (mainShortsPlayers.length === 0) {
+        await initMainShortsPlayer(0);
+      } else {
+        mainShortsPlayers.forEach((p) => {
+          try {
+            p.seekTo(0, true);
+            p.playVideo();
+          } catch {}
+        });
+      }
+    } else {
+      if (!(await waitMainPlayer())) return;
+      player.seekTo(0, true);
+      player.playVideo();
+    }
   } catch (e) {
     uiAlert(errText(e), { type: 'error' });
   }
 });
+
+$('btnMainViewShorts')?.addEventListener('click', () => setMainViewMode('shorts'));
+$('btnMainViewFull')?.addEventListener('click', () => setMainViewMode('full'));
+$('btnSimulateShorts')?.addEventListener('click', () => setMainViewMode('shorts'));
 
 $('segEnabled').addEventListener('change', () => {
   if (activeSegIdx === null) return;
@@ -1612,99 +2271,188 @@ $('segEnabled').addEventListener('change', () => {
   persistCfg();
 });
 
-$('segSetStartNow').addEventListener('click', () => {
-  if (!segPlayer || !segPlayer.getCurrentTime) return;
-  try {
-    const ct = Math.floor(segPlayer.getCurrentTime() || 0);
-    $('segEditStart').value = fmt(ct);
-  } catch {}
+$('btnSegViewShorts')?.addEventListener('click', () => setSegViewMode('shorts'));
+$('btnSegViewFull')?.addEventListener('click', () => setSegViewMode('full'));
+$('segCloseTop')?.addEventListener('click', () => closeSegModal());
+
+$('segCropModeSelect')?.addEventListener('change', async (e) => {
+  const newMode = e.target.value;
+  if ($('crop')) $('crop').value = newMode;
+  persistCfg();
+  updateCropPreview();
+
+  if (segViewMode === 'shorts') {
+    const ct = getSegCurrentTime();
+    await initSegShortsPlayer(ct);
+  }
 });
 
-$('segSetEndNow').addEventListener('click', () => {
-  if (!segPlayer || !segPlayer.getCurrentTime) return;
-  try {
-    const ct = Math.floor(segPlayer.getCurrentTime() || 0);
-    $('segEditEnd').value = fmt(ct);
-  } catch {}
+$('btnSegShortsPlayToggle')?.addEventListener('click', () => {
+  if (segShortsPlayers.length === 0) return;
+  segShortsPlaying = !segShortsPlaying;
+  updateSegShortsPlayBtn(segShortsPlaying);
+  segShortsPlayers.forEach((p) => {
+    try {
+      if (segShortsPlaying) p.playVideo();
+      else p.pauseVideo();
+    } catch {}
+  });
 });
 
-$('segApply').addEventListener('click', applySegEdit);
+$('segShortsSlider')?.addEventListener('input', (e) => {
+  const val = Number(e.target.value);
+  updateSegShortsTimeDisplay(val);
+  segShortsPlayers.forEach((p) => {
+    try { p.seekTo(val, true); } catch {}
+  });
+});
 
-$('segUse').addEventListener('click', () => {
+$('btnSegShortsReplay')?.addEventListener('click', () => {
+  segShortsPlayers.forEach((p) => {
+    try { p.seekTo(segStart, true); p.playVideo(); } catch {}
+  });
+  segShortsPlaying = true;
+  updateSegShortsPlayBtn(true);
+  updateSegShortsTimeDisplay(segStart);
+  if ($('segShortsSlider')) $('segShortsSlider').value = String(segStart);
+});
+
+$('segSetStartNow')?.addEventListener('click', () => {
+  const ct = getSegCurrentTime();
+  $('segEditStart').value = fmt(ct);
+  setDurMeter($('durMeterSeg'), ct, parseTime($('segEditEnd').value) || segEnd);
+});
+
+$('segSetEndNow')?.addEventListener('click', () => {
+  const ct = getSegCurrentTime();
+  $('segEditEnd').value = fmt(ct);
+  setDurMeter($('durMeterSeg'), parseTime($('segEditStart').value) || segStart, ct);
+});
+
+$('segApply')?.addEventListener('click', applySegEdit);
+
+$('segUse')?.addEventListener('click', () => {
   if (activeSegIdx === null) return;
   const s = segments[activeSegIdx];
   if (!s) return;
   $('sStart').value = String(Math.max(0, parseInt(s.start || 0, 10)));
   $('sEnd').value = String(Math.max(0, parseInt(s.end || 0, 10)));
   closeSegModal();
-  destroySegPlayer();
 });
 
-$('segClose').addEventListener('click', () => {
+$('segClose')?.addEventListener('click', () => {
   closeSegModal();
-  destroySegPlayer();
 });
 
-let shortsPlayers = [];
+// ==================== UNIFIED MAIN PLAYER ARCHITECTURE ====================
+let mainViewMode = 'shorts'; // 'shorts' | 'full'
+let mainShortsPlayers = [];
+let mainShortsTimer = null;
+let mainShortsPlaying = false;
 
-const destroyShortsPlayers = () => {
-  shortsPlayers.forEach(p => {
+const destroyMainShortsPlayers = () => {
+  if (mainShortsTimer) {
+    clearInterval(mainShortsTimer);
+    mainShortsTimer = null;
+  }
+  mainShortsPlayers.forEach((p) => {
     try { if (p && p.destroy) p.destroy(); } catch {}
   });
-  shortsPlayers = [];
-  const c = $('shortsContainer');
+  mainShortsPlayers = [];
+  const c = $('mainShortsContainer');
   if (c) c.innerHTML = '';
 };
 
-$('closeShortsModal').addEventListener('click', () => {
-  $('shortsModal').classList.remove('on');
-  destroyShortsPlayers();
-});
+const destroyMainFullPlayer = () => {
+  try {
+    if (player && player.destroy) player.destroy();
+  } catch {}
+  player = null;
+  playerReady = false;
+  const holder = $('player');
+  if (holder) holder.innerHTML = '';
+};
 
-$('btnSimulateShorts').addEventListener('click', async () => {
-  if (!currentVideoId) {
-    uiAlert('Mohon load video terlebih dahulu.', { type: 'warn' });
-    return;
+const getMainCurrentTime = () => {
+  if (mainViewMode === 'full') {
+    if (player && player.getCurrentTime) {
+      try { return Math.floor(player.getCurrentTime() || 0); } catch {}
+    }
+  } else {
+    if (mainShortsPlayers.length > 0 && mainShortsPlayers[0]?.getCurrentTime) {
+      try { return Math.floor(mainShortsPlayers[0].getCurrentTime() || 0); } catch {}
+    }
   }
-  if (!playerReady || !player || !player.getCurrentTime) return;
-  
-  const ct = player.getCurrentTime();
-  player.pauseVideo();
-  
-  $('shortsModal').classList.add('on');
-  destroyShortsPlayers();
-  
-  const mode = ($('crop')?.value || 'default').trim();
-  const c = $('shortsContainer');
-  
+  const tl = $('timeline');
+  return tl ? parseInt(tl.value || '0', 10) : 0;
+};
+
+const initMainShortsPlayer = async (startTime) => {
+  destroyMainShortsPlayers();
+  if (!currentVideoId) return;
   await ensureYTApi();
-  
+
+  const c = $('mainShortsContainer');
+  if (!c) return;
+  c.innerHTML = '';
+
+  const mode = ($('crop')?.value || 'default').trim();
+  const startAt = startTime !== undefined ? Math.floor(startTime) : (parseInt($('timeline')?.value || '0', 10) || 0);
+
   const createPlayer = (boxClass, ifClass, isMuted) => {
     const box = document.createElement('div');
     box.className = `shorts-crop-box ${boxClass}`;
-    
+
     const ifHolder = document.createElement('div');
     ifHolder.className = `shorts-iframe ${ifClass}`;
     box.appendChild(ifHolder);
     c.appendChild(box);
-    
+
     const p = new YT.Player(ifHolder, {
       videoId: currentVideoId,
-      playerVars: { controls: 0, rel: 0, modestbranding: 1, fs: 0, disablekb: 1, start: Math.floor(ct), mute: isMuted ? 1 : 0 },
+      playerVars: {
+        autoplay: mainShortsPlaying ? 1 : 0,
+        controls: 0,
+        rel: 0,
+        modestbranding: 1,
+        fs: 0,
+        disablekb: 1,
+        start: startAt,
+        mute: isMuted ? 1 : 0
+      },
       events: {
         onReady: (e) => {
           const iframe = e.target.getIframe();
           if (iframe) iframe.className = `shorts-iframe ${ifClass}`;
-          if (isMuted) { try { e.target.mute(); } catch {} }
-          try { e.target.playVideo(); } catch {}
-          try { e.target.seekTo(ct, true); } catch {}
+          try { e.target.seekTo(startAt, true); } catch {}
+          if (mainShortsPlaying) {
+            try { e.target.playVideo(); } catch {}
+          }
+          if (!isMuted) {
+            try { e.target.unMute(); } catch {}
+          }
+        },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) {
+            mainShortsPlaying = true;
+          } else if (e.data === YT.PlayerState.PAUSED) {
+            mainShortsPlaying = false;
+          } else if (e.data === YT.PlayerState.ENDED) {
+            mainShortsPlaying = false;
+            mainShortsPlayers.forEach((pl) => {
+              try { pl.seekTo(0, true); pl.pauseVideo(); } catch {}
+            });
+            if ($('timeline')) $('timeline').value = '0';
+            if ($('tCur')) $('tCur').textContent = '00:00';
+            syncRangeFill($('timeline'));
+          }
         }
       }
     });
-    shortsPlayers.push(p);
+    mainShortsPlayers.push(p);
     return p;
   };
-  
+
   if (mode === 'split_left' || mode === 'split_right') {
     createPlayer('shorts-box-top', 'shorts-if-top', false);
     createPlayer('shorts-box-bottom', mode === 'split_left' ? 'shorts-if-bottom-left' : 'shorts-if-bottom-right', true);
@@ -1713,59 +2461,123 @@ $('btnSimulateShorts').addEventListener('click', async () => {
   } else {
     createPlayer('shorts-box-default', 'shorts-if-default', false);
   }
-});
+
+  if (mainShortsTimer) clearInterval(mainShortsTimer);
+  mainShortsTimer = setInterval(() => {
+    if (mainShortsPlayers.length === 0) return;
+    const p0 = mainShortsPlayers[0];
+    if (!p0 || !p0.getCurrentTime) return;
+    try {
+      const ct = p0.getCurrentTime();
+      const tl = $('timeline');
+      if (tl && !tl.matches(':active')) {
+        tl.value = String(Math.floor(ct));
+        syncRangeFill(tl);
+        if ($('tCur')) $('tCur').textContent = fmt(ct);
+      }
+      if (previewStopAt !== null && ct >= previewStopAt) {
+        mainShortsPlayers.forEach((pl) => { try { pl.pauseVideo(); } catch {} });
+        mainShortsPlaying = false;
+        previewStopAt = null;
+      }
+    } catch {}
+  }, 200);
+
+  updateSubtitlePreview();
+};
+
+const initMainFullPlayer = async (startTime) => {
+  destroyMainFullPlayer();
+  if (!currentVideoId) return;
+  await ensureYTApi();
+
+  const startAt = startTime !== undefined ? Math.floor(startTime) : (parseInt($('timeline')?.value || '0', 10) || 0);
+
+  player = new YT.Player('player', {
+    height: '100%',
+    width: '100%',
+    videoId: currentVideoId,
+    playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1, start: startAt },
+    events: {
+      onReady: (e) => {
+        playerReady = true;
+        try { e.target.setPlaybackQuality('large'); } catch {}
+        try { e.target.seekTo(startAt, true); } catch {}
+        if (mainShortsPlaying) {
+          try { e.target.playVideo(); } catch {}
+        }
+        const tick = () => {
+          try {
+            if (!player || mainViewMode !== 'full') return;
+            const ct = player.getCurrentTime ? player.getCurrentTime() : 0;
+            const tl = $('timeline');
+            if (tl && !tl.matches(':active')) {
+              tl.value = String(Math.floor(ct));
+              syncRangeFill(tl);
+              if ($('tCur')) $('tCur').textContent = fmt(ct);
+            }
+            if (previewStopAt !== null && ct >= previewStopAt) {
+              player.pauseVideo();
+              previewStopAt = null;
+            }
+          } catch {}
+          if (mainViewMode === 'full') requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      },
+      onStateChange: (e) => {
+        if (e.data === YT.PlayerState.PLAYING) {
+          mainShortsPlaying = true;
+        } else if (e.data === YT.PlayerState.PAUSED) {
+          mainShortsPlaying = false;
+        }
+      }
+    },
+  });
+
+  updateCropPreview();
+  updateSubtitlePreview();
+};
+
+const setMainViewMode = async (mode) => {
+  if (mode === mainViewMode) return;
+  const currentCt = getMainCurrentTime();
+  mainViewMode = mode;
+
+  const btnShorts = $('btnMainViewShorts');
+  const btnFull = $('btnMainViewFull');
+  const viewShorts = $('mainShortsView');
+  const viewFull = $('mainFullView');
+
+  if (btnShorts) btnShorts.classList.toggle('active', mode === 'shorts');
+  if (btnFull) btnFull.classList.toggle('active', mode === 'full');
+
+  if (mode === 'shorts') {
+    if (viewShorts) viewShorts.style.display = 'flex';
+    if (viewFull) viewFull.style.display = 'none';
+    destroyMainFullPlayer();
+    await initMainShortsPlayer(currentCt);
+  } else {
+    if (viewShorts) viewShorts.style.display = 'none';
+    if (viewFull) viewFull.style.display = 'block';
+    destroyMainShortsPlayers();
+    await initMainFullPlayer(currentCt);
+  }
+  updateSubtitlePreview();
+};
 
 window.onYouTubeIframeAPIReady = function () {
   playerReady = true;
 };
 
-const loadPlayer = (videoId) => {
+const loadPlayer = (videoId, startTime = 0) => {
+  currentVideoId = videoId;
   ensureYTApi().then(() => {
-    if (player && player.getVideoData && player.loadVideoById) {
-      const curId = player.getVideoData()?.video_id;
-      if (String(curId) !== String(videoId)) {
-        try {
-          player.loadVideoById(videoId);
-        } catch {}
-      }
-      return;
+    if (mainViewMode === 'shorts') {
+      initMainShortsPlayer(startTime);
+    } else {
+      initMainFullPlayer(startTime);
     }
-
-    try {
-      if (player && player.destroy) player.destroy();
-    } catch {}
-    const holder = $('player');
-    if (holder) holder.innerHTML = '';
-
-    player = new YT.Player('player', {
-      height: '100%',
-      width: '100%',
-      videoId: videoId,
-      playerVars: { controls: 1, rel: 0, modestbranding: 1, fs: 1 },
-      events: {
-        onReady: (e) => {
-          playerReady = true;
-          try {
-            e.target.setPlaybackQuality('large');
-          } catch {}
-          const tick = () => {
-            try {
-              if (!player) return;
-              const ct = player.getCurrentTime ? player.getCurrentTime() : 0;
-              $('timeline').value = String(Math.floor(ct));
-              syncRangeFill($('timeline'));
-              $('tCur').textContent = fmt(ct);
-              if (previewStopAt !== null && ct >= previewStopAt) {
-                player.pauseVideo();
-                previewStopAt = null;
-              }
-            } catch {}
-            requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
-        },
-      },
-    });
   });
 };
 

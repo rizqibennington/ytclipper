@@ -10,7 +10,11 @@ from app.config_store import load_config
 from app.core_constants import MAX_DURATION
 from app.ffmpeg_deps import cek_dependensi
 from app.yt_info import extract_video_id
-from app.services.gemini_service import generate_clip_metadata, process_audio_with_gemini
+from app.services.gemini_service import (
+    find_highlights_with_gemini_transcript,
+    generate_clip_metadata,
+    process_audio_with_gemini,
+)
 from app.yt_utils import (
     get_cookies_path,
     get_yt_dlp_cookies_args,
@@ -254,85 +258,157 @@ def _build_ai_segments(transcript_segments, duration_seconds, limit=10):
         return []
 
     max_len = float(MAX_DURATION)
-    duration_options = [20.0, 30.0, 45.0, 60.0, 90.0, 120.0, max_len]
+    target_len = min(60.0, max_len)
+    min_len = 25.0
 
     keywords = {
-        "intinya",
-        "jadi",
-        "pokoknya",
-        "kesimpulannya",
-        "serius",
-        "gila",
-        "parah",
-        "wkwk",
-        "haha",
-        "anjir",
-        "buset",
-        "plot",
-        "twist",
-        "ending",
-        "ternyata",
-        "finally",
-        "beneran",
-        "nggak",
-        "gak",
-        "kok",
-        "lah",
+        # Indonesian high-engagement & viral hook keywords
+        "intinya", "jadi", "pokoknya", "kesimpulannya", "serius", "gila", "parah",
+        "wkwk", "haha", "anjir", "buset", "plot", "twist", "ending", "ternyata",
+        "finally", "beneran", "nggak", "gak", "kok", "lah", "rahasia", "tips",
+        "trik", "penting", "menurut", "alasan", "karena", "faktanya", "kenapa",
+        "bayangkan", "masalahnya", "solusinya", "kuncinya", "tahukah", "pernah",
+        "bongkar", "waspada", "jangan", "wajib", "ajaib", "terbukti", "kocak",
+        # English high-engagement & viral hook keywords
+        "secret", "truth", "revealed", "insane", "crazy", "unbelievable", "shocking",
+        "mistake", "warning", "never", "always", "how", "why", "best", "worst",
+        "hack", "key", "solution", "actually", "plot", "twist", "climax", "genius",
     }
 
-    segs = []
+    # 1. Score each raw subtitle chunk
+    scored_items = []
     for s in transcript_segments:
         try:
             st = float(s.get("start", 0) or 0)
             en = float(s.get("end", st) or st)
-            tx = str(s.get("text", "") or "")
+            tx = str(s.get("text", "") or "").strip()
         except Exception:
             continue
-        if en <= st:
+        if en <= st or not tx:
             continue
 
         toks = _word_tokens(tx)
         kw = sum(1 for t in toks if t in keywords)
         density = float(kw) / max(1.0, float(len(toks)))
-        score = density + (0.25 if any(t in {"plot", "twist", "ending", "ternyata"} for t in toks) else 0.0)
+        # Bonus for high-impact hook keywords or questions
+        is_question = "?" in tx or any(tx.lower().startswith(q) for q in ("kenapa", "mengapa", "bagaimana", "tahukah", "why", "how", "what if", "pernah"))
+        q_bonus = 0.25 if is_question else 0.0
+        kw_bonus = 0.3 if any(t in {"plot", "twist", "ending", "ternyata", "rahasia", "faktanya", "kuncinya", "secret", "truth", "insane", "revealed"} for t in toks) else 0.0
+        score = density + kw_bonus + q_bonus
+        scored_items.append({"start": st, "end": en, "text": tx, "score": score, "tokens": len(toks)})
 
-        segs.append({"start": st, "end": en, "text": tx, "_score": score})
-
-    if not segs:
+    if not scored_items:
         return []
 
-    segs.sort(key=lambda x: (-(x.get("_score") or 0.0), x.get("start") or 0.0))
+    # 2. Find high-interest anchor points (sorted by score descending)
+    anchors = sorted(scored_items, key=lambda x: (-x["score"], x["start"]))
 
-    out = []
-    for it in segs:
-        st = float(it["start"])
-        en = float(it["end"])
-        chosen_len = None
-        for d in duration_options:
-            if d <= max_len:
-                chosen_len = float(d)
-                break
-        if chosen_len is None:
-            chosen_len = min(60.0, max_len)
+    candidates = []
+    for anchor in anchors:
+        a_st = anchor["start"]
+        a_en = anchor["end"]
 
-        if (en - st) > chosen_len:
-            en = st + chosen_len
-        if (en - st) > max_len:
-            en = st + max_len
-        if en <= st:
+        # Expand anchor to reach optimal Shorts duration (target_len ~45-60s)
+        # Give context before the hook (e.g. 6s before anchor start)
+        win_start = max(0.0, a_st - 6.0)
+        win_end = min(dur_total, win_start + target_len)
+
+        # Ensure duration is at least min_len (if video length permits)
+        if (win_end - win_start) < min_len and dur_total >= min_len:
+            win_start = max(0.0, win_end - min_len)
+
+        win_dur = win_end - win_start
+        if win_dur < 10.0:
             continue
+        if win_dur > max_len:
+            win_end = win_start + max_len
 
-        out.append({"enabled": True, "start": int(max(0, round(st))), "end": int(max(round(st) + 1, round(en))), "score": float(it.get("_score") or 0.0)})
-        if len(out) >= int(limit or 10):
-            break
+        # Snap to nearest sentence boundaries so we never cut speech mid-sentence
+        best_st = win_start
+        min_diff_st = 999.0
+        for it in scored_items:
+            diff = abs(it["start"] - win_start)
+            if diff < min_diff_st and diff < 6.0:
+                min_diff_st = diff
+                best_st = it["start"]
 
-    max_score = max((p["score"] for p in out), default=1.0) or 1.0
-    for p in out:
-        p["score"] = float(p["score"] / max_score)
+        best_en = win_end
+        min_diff_en = 999.0
+        for it in scored_items:
+            diff = abs(it["end"] - win_end)
+            if diff < min_diff_en and diff < 6.0:
+                min_diff_en = diff
+                best_en = it["end"]
+
+        if best_en - best_st >= min_len and best_en - best_st <= max_len:
+            win_start = best_st
+            win_end = best_en
+
+        # Calculate window cumulative score & text summary
+        win_score = 0.0
+        win_texts = []
+        for it in scored_items:
+            if it["end"] >= win_start and it["start"] <= win_end:
+                win_score += it["score"]
+                win_texts.append(it["text"])
+
+        candidates.append({
+            "start": round(win_start, 1),
+            "end": round(win_end, 1),
+            "score": win_score,
+            "text": " ".join(win_texts[:6]),
+        })
+
+    # 3. Non-Maximum Suppression (Deduplication of overlapping windows)
+    candidates.sort(key=lambda x: -x["score"])
+    selected = []
+    for cand in candidates:
+        overlap = False
+        c_st = cand["start"]
+        c_en = cand["end"]
+        for s in selected:
+            s_st = s["start"]
+            s_en = s["end"]
+            inter_st = max(c_st, s_st)
+            inter_en = min(c_en, s_en)
+            inter_dur = max(0.0, inter_en - inter_st)
+            if inter_dur > 0.35 * (c_en - c_st):
+                overlap = True
+                break
+        if not overlap:
+            selected.append(cand)
+            if len(selected) >= int(limit or 10):
+                break
+
+    # 4. Normalize scores and format output (Pastikan durasi Shorts minimal 15 detik)
+    max_score = max((p["score"] for p in selected), default=1.0) or 1.0
+    out = []
+    for p in selected:
+        st = int(max(0, round(p["start"])))
+        en = int(max(st + 15, round(p["end"])))
+        if dur_total and en > dur_total:
+            en = int(dur_total)
+            if (en - st) < 15 and dur_total >= 15:
+                st = max(0, en - 15)
+        out.append({
+            "enabled": True,
+            "start": st,
+            "end": en,
+            "score": round(float(p["score"] / max_score), 2),
+        })
+
+    out.sort(key=lambda x: x["start"])
     return out
 
 
-def get_ai_segments(data):
+def get_ai_segments(data, on_progress=None):
+    def report(pct, msg, stage="process"):
+        if callable(on_progress):
+            try:
+                on_progress(pct, msg, stage)
+            except Exception:
+                pass
+
     data = data or {}
     url = _get_url(data)
     video_id = extract_video_id(url)
@@ -344,6 +420,7 @@ def get_ai_segments(data):
     limit = int(data.get("limit", 10) or 10)
     duration_seconds = data.get("duration_seconds")
 
+    report(10.0, "Memeriksa ketersediaan dependency...")
     try:
         _ensure_ai_deps()
     except ValueError:
@@ -351,36 +428,92 @@ def get_ai_segments(data):
     except Exception as e:
         raise ValueError(f"Gagal menyiapkan dependency backup AI: {type(e).__name__}: {str(e)}")
 
+    api_key = data.get("gemini_api_key") or load_config().get("gemini_api_key")
+
     audio_path = None
     tmpdir = None
-    
-    # Method 1: Coba ambil subtitle (sangat cepat, hemat CPU)
+
+    # Method 1: Subtitle YouTube (sangat cepat, 100% hemat CPU)
     print("Mencoba mengambil subtitle dari YouTube...")
+    report(20.0, "Memeriksa transkrip subtitle YouTube...")
     try:
         sub_segments = _fetch_youtube_subtitle(url, language)
         if sub_segments and len(sub_segments) > 5:
             print(f"Sukses mendapatkan {len(sub_segments)} segmen subtitle otomatis!")
+            report(45.0, f"Membaca {len(sub_segments)} baris transkrip...")
+            # Jika user memasukkan Gemini API Key, gunakan analisis semantik Gemini (100% Free Tier)
+            if api_key:
+                try:
+                    print("Menggunakan Gemini Semantic Highlight pada transkrip...")
+                    report(65.0, "Mencari highlight viral dengan Gemini AI...")
+                    gemini_segs = find_highlights_with_gemini_transcript(
+                        sub_segments, api_key, duration_seconds=duration_seconds, limit=limit
+                    )
+                    if gemini_segs:
+                        report(95.0, "Menyusun klip Shorts...")
+                        return {"ok": True, "segments": gemini_segs}
+                except Exception as ge:
+                    print(f"Gemini transcript analysis error, fallback ke local heuristic: {ge}")
+
+            report(65.0, "Menganalisis hook & punchline transkrip...")
             segs = _build_ai_segments(sub_segments, duration_seconds=duration_seconds, limit=limit)
+            report(95.0, "Menyusun klip Shorts...")
             return {"ok": True, "segments": segs}
     except Exception as e:
         print(f"Gagal mengambil subtitle otomatis: {e}")
 
-    # Method 2: Fallback ke Gemini API
-    print("Subtitle tidak tersedia, menggunakan fallback Gemini API untuk audio...")
-    api_key = data.get("gemini_api_key")
-    if not api_key:
-        api_key = load_config().get("gemini_api_key")
-    
-    if not api_key:
-        raise ValueError("API Key Gemini belum diset. Silakan masukkan di pengaturan untuk menggunakan fitur Fallback Audio.")
-        
+    # Method 2: Download Audio & Analisis (Gemini atau Local Whisper)
+    print("Subtitle tidak tersedia, mengunduh audio untuk analisis...")
+    report(30.0, "Mengunduh audio video untuk dianalisis...")
     try:
         audio_path, tmpdir = _download_audio_to_temp(url)
+        report(55.0, "Audio siap, menyiapkan model transkripsi...")
+
+        # Jika ada API Key Gemini, coba gunakan Gemini Audio
+        if api_key:
+            try:
+                print("Menganalisis audio dengan Gemini...")
+                report(70.0, "Mengunggah audio & menganalisis dengan Gemini...")
+                segs = process_audio_with_gemini(audio_path, api_key)
+                if segs:
+                    report(95.0, "Menyusun klip Shorts...")
+                    return {"ok": True, "segments": segs}
+            except Exception as e:
+                print(f"Gemini audio processing gagal: {e}. Mengalihkan ke Faster-Whisper offline...")
+
+        # Method 3: Fallback ke Faster-Whisper Lokal (100% Offline & Gratis)
+        print("Menganalisis audio secara lokal menggunakan Faster-Whisper (100% Gratis)...")
+        report(60.0, "Mentranskripsi audio secara lokal (Faster-Whisper)...")
         try:
-            segs = process_audio_with_gemini(audio_path, api_key)
-            return {"ok": True, "segments": segs}
-        except Exception as e:
-            raise ValueError(f"Gagal memproses audio dengan Gemini: {str(e)}")
+            from app.subtitle_ai import get_faster_whisper_model
+            model = get_faster_whisper_model()
+            lang_param = language if language and language != "auto" else None
+            report(70.0, "Memproses transkripsi speech-to-text...")
+            segments_gen, _ = model.transcribe(audio_path, language=lang_param, beam_size=1)
+            whisper_subs = []
+            for s in segments_gen:
+                whisper_subs.append({"start": float(s.start), "end": float(s.end), "text": str(s.text)})
+
+            if whisper_subs:
+                if api_key:
+                    try:
+                        report(85.0, "Mencari highlight viral dengan Gemini AI...")
+                        gemini_segs = find_highlights_with_gemini_transcript(
+                            whisper_subs, api_key, duration_seconds=duration_seconds, limit=limit
+                        )
+                        if gemini_segs:
+                            report(95.0, "Menyusun klip Shorts...")
+                            return {"ok": True, "segments": gemini_segs}
+                    except Exception:
+                        pass
+                report(85.0, "Menganalisis hook & punchline transkrip...")
+                segs = _build_ai_segments(whisper_subs, duration_seconds=duration_seconds, limit=limit)
+                report(95.0, "Menyusun klip Shorts...")
+                return {"ok": True, "segments": segs}
+        except Exception as we:
+            print(f"Faster-Whisper offline transcribing error: {we}")
+
+        raise ValueError("Tidak dapat mengekstrak segmen dari audio video ini.")
     finally:
         try:
             if tmpdir is not None:

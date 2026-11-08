@@ -26,6 +26,9 @@ class StartJobRequest(BaseModel):
     whisper_model: str | None = None
     subtitle_language: str | None = None
     subtitle_position: Literal["bottom", "middle", "top"] = "middle"
+    subtitle_font_name: str | None = "Arial Black"
+    subtitle_font_size: int | None = 22
+    subtitle_font_color: str | None = "#FFFFFF"
     output_dir: str | None = None
     use_gemini_suggestions: bool = False
     gemini_api_key: str | None = None

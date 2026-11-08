@@ -8,6 +8,30 @@ from app.clipper import format_hhmmss, proses_dengan_segmen
 
 _JOBS_LOCK = threading.Lock()
 _JOBS = {}
+_CANCELLED_JOBS = set()
+
+
+def cancel_job(job_id):
+    with _JOBS_LOCK:
+        _CANCELLED_JOBS.add(job_id)
+        job = _JOBS.get(job_id)
+        if not job:
+            return False
+        job["cancelled"] = True
+        job["running"] = False
+        job["done"] = True
+        job["stage"] = "cancelled"
+        job["status"] = "Dibatalkan oleh user"
+        job["error"] = "Dibatalkan oleh pengguna"
+        return True
+
+
+def is_job_cancelled(job_id):
+    with _JOBS_LOCK:
+        if job_id in _CANCELLED_JOBS:
+            return True
+        job = _JOBS.get(job_id)
+        return bool(job and job.get("cancelled", False))
 
 
 class JobWriter:
@@ -65,6 +89,8 @@ def create_job(job_id, output_dir):
         "success_count": 0,
         "files": [],
         "segments": [],
+        "ai_metadata": {},
+        "cancelled": False,
     }
 
     with _JOBS_LOCK:
@@ -117,6 +143,8 @@ def run_job(job_id, payload):
         print(f"📍 {status_msg}")
 
     def event_cb(evt):
+        if is_job_cancelled(job_id):
+            raise RuntimeError("Job dibatalkan oleh pengguna.")
         try:
             push(evt.get("stage", ""), clip_index=evt.get("clip_index"))
         except Exception:
@@ -141,6 +169,9 @@ def run_job(job_id, payload):
                 whisper_model=payload.get("whisper_model"),
                 subtitle_language=payload.get("subtitle_language"),
                 subtitle_position=payload.get("subtitle_position", "middle"),
+                subtitle_font_name=payload.get("subtitle_font_name", "Arial Black"),
+                subtitle_font_size=payload.get("subtitle_font_size", 22),
+                subtitle_font_color=payload.get("subtitle_font_color", "#FFFFFF"),
                 output_dir=payload.get("output_dir"),
                 apply_padding=payload.get("apply_padding", False),
                 event_cb=event_cb,
@@ -157,9 +188,15 @@ def run_job(job_id, payload):
                 output_dir=result.get("output_dir"),
                 success_count=result.get("success_count", 0),
                 files=[os.path.basename(f) for f in result.get("files", [])],
+                ai_metadata=result.get("ai_metadata", {}),
             )
         except Exception as e:
             import traceback
+
+            if is_job_cancelled(job_id):
+                print(f"\n[JOB CANCELLED] Job dibatalkan oleh pengguna.")
+                update_job(job_id, running=False, done=True, percent=0.0, stage="cancelled", status="Dibatalkan", eta="", error="Job dibatalkan oleh pengguna.")
+                return
 
             error_detail = f"{type(e).__name__}: {str(e)}"
             print(f"\n[FATAL ERROR] {error_detail}")
@@ -176,13 +213,16 @@ def start_job(job_id, payload):
 def run_ai_job(job_id, payload):
     from app.services.ai_service import get_ai_segments
     
-    update_job(job_id, running=True, percent=10.0, stage="download", status="⬇️ Download/Processing Audio...", eta="", error=None)
+    update_job(job_id, running=True, percent=10.0, stage="init", status="🤖 Menyiapkan analisis AI...", eta="", error=None)
+
+    def on_ai_progress(percent, status, stage="process"):
+        update_job(job_id, percent=float(percent), status=str(status), stage=str(stage))
 
     writer = JobWriter(job_id)
     with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
         print(f"🤖 Memulai analisis AI segments...")
         try:
-            result = get_ai_segments(payload)
+            result = get_ai_segments(payload, on_progress=on_ai_progress)
             if not result.get("ok"):
                 raise ValueError(result.get("error", "Gagal mendapatkan AI segments"))
             

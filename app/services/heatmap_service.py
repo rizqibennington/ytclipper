@@ -112,11 +112,18 @@ def get_heatmap_segments(data, settings: Settings | None = None):
         raise
 
     segs = []
+    dur_total = float(duration_seconds) if duration_seconds is not None else None
     for it in heatmap:
         s = int(float(it.get("start", 0)))
         d = int(float(it.get("duration", 0)))
         if d <= 0:
             continue
+        # Minimum durasi untuk format YouTube Shorts adalah 15 detik (optimal 30 detik)
+        if d < 15:
+            d = 30
+            if dur_total and (s + d) > dur_total:
+                s = max(0, int(dur_total) - 30)
+                d = max(15, min(30, int(dur_total) - s))
         segs.append({"enabled": True, "start": s, "end": s + d, "score": float(it.get("score", 0))})
     segs.sort(key=lambda x: (-(x.get("score") or 0.0), x.get("start") or 0, x.get("end") or 0))
 

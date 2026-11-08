@@ -11,6 +11,9 @@ class ConfigResponse(BaseModel):
     whisper_model: str | None = None
     subtitle_language: str | None = None
     subtitle_position: str | None = None
+    subtitle_font_name: str | None = None
+    subtitle_font_size: int | None = None
+    subtitle_font_color: str | None = None
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
     has_gemini_key: bool | None = None
@@ -28,6 +31,9 @@ class ConfigUpdateRequest(BaseModel):
     whisper_model: str | None = None
     subtitle_language: str | None = None
     subtitle_position: str | None = None
+    subtitle_font_name: str | None = None
+    subtitle_font_size: int | None = None
+    subtitle_font_color: str | None = None
     preview_seconds: int | None = None
     deps_verbose: bool | None = None
     use_gemini_suggestions: bool | None = None
