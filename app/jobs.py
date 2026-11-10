@@ -1,35 +1,40 @@
 import contextlib
+import sys
 import threading
 import time
+import uuid
 
 import os
-from app.clipper import format_hhmmss, proses_dengan_segmen
+from app.clipper import SubtitleReviewAborted, format_hhmmss, proses_dengan_segmen
 
 
-_JOBS_LOCK = threading.Lock()
+_JOBS_LOCK = threading.Condition()
 _JOBS = {}
-_CANCELLED_JOBS = set()
+_LOG_LOCK = threading.Lock()
+_LOG_WRITER = threading.local()
+_LOG_USERS = 0
 
 
 def cancel_job(job_id):
     with _JOBS_LOCK:
-        _CANCELLED_JOBS.add(job_id)
         job = _JOBS.get(job_id)
         if not job:
             return False
+        if job["done"]:
+            return True
         job["cancelled"] = True
         job["running"] = False
         job["done"] = True
         job["stage"] = "cancelled"
         job["status"] = "Dibatalkan oleh user"
         job["error"] = "Dibatalkan oleh pengguna"
+        job.pop("subtitle_review", None)
+        _JOBS_LOCK.notify_all()
         return True
 
 
 def is_job_cancelled(job_id):
     with _JOBS_LOCK:
-        if job_id in _CANCELLED_JOBS:
-            return True
         job = _JOBS.get(job_id)
         return bool(job and job.get("cancelled", False))
 
@@ -47,6 +52,42 @@ class JobWriter:
         return
 
 
+class _JobLogStream:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, text):
+        return getattr(_LOG_WRITER, "writer", self.stream).write(text)
+
+    def flush(self):
+        return getattr(_LOG_WRITER, "writer", self.stream).flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+@contextlib.contextmanager
+def _job_logs(job_id):
+    global _LOG_USERS
+    with _LOG_LOCK:
+        if _LOG_USERS == 0:
+            sys.stdout = _JobLogStream(sys.stdout)
+            sys.stderr = _JobLogStream(sys.stderr)
+        _LOG_USERS += 1
+    _LOG_WRITER.writer = JobWriter(job_id)
+    try:
+        yield
+    finally:
+        del _LOG_WRITER.writer
+        with _LOG_LOCK:
+            _LOG_USERS -= 1
+            if _LOG_USERS == 0:
+                if isinstance(sys.stdout, _JobLogStream):
+                    sys.stdout = sys.stdout.stream
+                if isinstance(sys.stderr, _JobLogStream):
+                    sys.stderr = sys.stderr.stream
+
+
 def append_job_log(job_id, text):
     with _JOBS_LOCK:
         job = _JOBS.get(job_id)
@@ -60,7 +101,7 @@ def append_job_log(job_id, text):
 def update_job(job_id, **kwargs):
     with _JOBS_LOCK:
         job = _JOBS.get(job_id)
-        if not job:
+        if not job or job["cancelled"]:
             return
         job.update(kwargs)
 
@@ -71,6 +112,41 @@ def get_job(job_id):
         if not job:
             return None
         return dict(job)
+
+
+def wait_for_subtitle_review(job_id, video_path, draft, clip_index, timeout=1800):
+    review = {
+        "id": uuid.uuid4().hex,
+        "video_path": video_path,
+        "srt": draft,
+        "clip_index": clip_index,
+    }
+    with _JOBS_LOCK:
+        job = _JOBS[job_id]
+        if job["cancelled"]:
+            raise SubtitleReviewAborted("Job dibatalkan oleh pengguna.")
+        job.update(stage="subtitle_review", status=f"Tinjau caption Clip #{clip_index}", eta="", subtitle_review=review)
+        try:
+            if not _JOBS_LOCK.wait_for(lambda: job["cancelled"] or "edited" in review, timeout):
+                raise SubtitleReviewAborted("Waktu untuk meninjau caption habis.")
+            if job["cancelled"]:
+                raise SubtitleReviewAborted("Job dibatalkan oleh pengguna.")
+            return review["edited"]
+        finally:
+            job.pop("subtitle_review", None)
+            if not job["cancelled"]:
+                job.update(stage="clip", status=f"Melanjutkan Clip #{clip_index}...")
+
+
+def submit_subtitle_review(job_id, review_id, srt):
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        review = job.get("subtitle_review") if job else None
+        if not review or review["id"] != review_id or "edited" in review:
+            return False
+        review["edited"] = srt
+        _JOBS_LOCK.notify_all()
+        return True
 
 
 def create_job(job_id, output_dir):
@@ -106,54 +182,63 @@ def run_job(job_id, payload):
         "clip": "✂️ Proses clipping...",
         "subtitle": "🤖 AI generating subtitle...",
         "subtitle_burn": "🔥 Burning subtitle...",
+        "clip_render": "🎞️ Render video...",
+        "metadata": "✨ Menyiapkan judul dan deskripsi...",
     }
 
     total_clips = max(1, int(payload.get("total_clips", 1)))
     base_percent = 7.0
     per_clip = (100.0 - base_percent) / float(total_clips)
-    clip_stage = {"download": 0.55, "clip": 0.35, "subtitle": 0.07, "subtitle_burn": 0.03}
+    render_start, render_end = 0.85, 0.99
+    clip_stage = {
+        "download": 0.0, "clip": 0.40, "subtitle": 0.60,
+        "subtitle_burn": render_start, "clip_render": render_start, "metadata": render_end,
+    }
     if not payload.get("use_subtitle", False):
-        clip_stage = {"download": 0.60, "clip": 0.40}
+        clip_stage = {"download": 0.0, "clip": 0.60, "metadata": render_end}
 
-    start_ts = time.perf_counter()
-    state = {"clip_index": 1, "stage": "dependency"}
+    state = {"clip_index": 1, "render_started": None}
 
-    def push(stage, clip_index=None):
+    def push(stage, clip_index=None, render_fraction=None):
         if clip_index is not None:
             state["clip_index"] = int(clip_index)
-        state["stage"] = stage
         clip_i = max(1, int(state["clip_index"]))
-        done_clips = float(clip_i - 1)
         stage_part = clip_stage.get(stage, 0.0)
-        percent = base_percent + (done_clips + stage_part) * per_clip
-        percent = max(0.0, min(100.0, percent))
-
-        elapsed = time.perf_counter() - start_ts
-        if percent > 0.1:
-            remaining = elapsed * (100.0 - percent) / percent
-            eta = format_hhmmss(int(remaining))
-        else:
-            eta = ""
-
+        eta = ""
+        if stage in ("subtitle_burn", "clip_render"):
+            if render_fraction is None:
+                state["render_started"] = time.perf_counter()
+            else:
+                fraction = min(1.0, max(0.0, render_fraction))
+                stage_part += (render_end - render_start) * fraction
+                if clip_i == total_clips and state["render_started"] is not None and 0.05 <= fraction < 1.0:
+                    elapsed = time.perf_counter() - state["render_started"]
+                    remaining = elapsed * (1.0 - fraction) / fraction
+                    if remaining >= 1.0:
+                        eta = format_hhmmss(round(remaining))
+        percent = min(100.0, base_percent + (clip_i - 1 + stage_part) * per_clip)
         status_msg = stage_text.get(stage, stage)
-        if stage in ("download", "clip", "subtitle", "subtitle_burn"):
+        if stage in clip_stage:
             status_msg = f"[Clip {clip_i}/{total_clips}] {status_msg}"
 
         update_job(job_id, percent=percent, stage=stage, status=status_msg, eta=eta)
-        print(f"📍 {status_msg}")
+        if render_fraction is None:
+            print(f"📍 {status_msg}")
 
     def event_cb(evt):
         if is_job_cancelled(job_id):
             raise RuntimeError("Job dibatalkan oleh pengguna.")
         try:
-            push(evt.get("stage", ""), clip_index=evt.get("clip_index"))
+            push(evt.get("stage", ""), clip_index=evt.get("clip_index"), render_fraction=evt.get("render_fraction"))
         except Exception:
             return
 
     update_job(job_id, running=True, percent=0.0, stage="dependency", status="🚀 Memulai...", eta="", error=None)
 
-    writer = JobWriter(job_id)
-    with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
+    def review_cb(video_path, draft, clip_index):
+        return wait_for_subtitle_review(job_id, video_path, draft, clip_index)
+
+    with _job_logs(job_id):
         print(f"🎬 Memproses {total_clips} clip...")
         print(f"📁 Output: {payload.get('output_dir', 'default')}")
         print(f"🎨 Crop mode: {payload.get('crop_mode', 'default')}")
@@ -176,6 +261,7 @@ def run_job(job_id, payload):
                 apply_padding=payload.get("apply_padding", False),
                 event_cb=event_cb,
                 gemini_api_key=payload.get("gemini_api_key"),
+                subtitle_review_cb=review_cb if payload.get("review_subtitles") else None,
             )
             update_job(
                 job_id,
@@ -218,8 +304,7 @@ def run_ai_job(job_id, payload):
     def on_ai_progress(percent, status, stage="process"):
         update_job(job_id, percent=float(percent), status=str(status), stage=str(stage))
 
-    writer = JobWriter(job_id)
-    with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
+    with _job_logs(job_id):
         print(f"🤖 Memulai analisis AI segments...")
         try:
             result = get_ai_segments(payload, on_progress=on_ai_progress)

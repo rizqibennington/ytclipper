@@ -652,6 +652,7 @@ const persistCfg = async () => {
 
 const syncSub = () => {
   const on = $('subOn').checked;
+  $('reviewSubtitles').disabled = !on;
   $('model').disabled = !on;
   if ($('subLang')) $('subLang').disabled = !on;
   $('subPos').disabled = !on;
@@ -696,6 +697,25 @@ const updateCropPreview = () => {
             <rect x="${xC}" y="0" width="${w}" height="${topH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
             <rect x="${bottomX}" y="${bottomY}" width="${w}" height="${bottomH}" fill="none" stroke="${stroke}" stroke-width="${sw}" />
             <line x1="0" y1="${bottomY}" x2="100" y2="${bottomY}" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="2 1" />
+          `;
+    } else if (mode === 'split_podcast') {
+      const wPod = 63.28;
+      const rightX = 100 - wPod;
+      holes = `M0 0H${wPod}V100H0Z M${rightX} 0H100V100H${rightX}Z`;
+      frames = `
+            <rect x="0" y="0" width="${wPod}" height="100" fill="none" stroke="${stroke}" stroke-width="${sw}" />
+            <rect x="${rightX}" y="0" width="${wPod}" height="100" fill="none" stroke="rgba(244, 63, 94, 0.9)" stroke-width="${sw}" />
+            <line x1="${rightX}" y1="0" x2="${rightX}" y2="100" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="2 1" />
+            <line x1="${wPod}" y1="0" x2="${wPod}" y2="100" stroke="${stroke2}" stroke-width="${sw}" stroke-dasharray="2 1" />
+          `;
+    } else if (mode === 'podcast_speaker') {
+      const wSpk = 31.64;
+      const leftSpkX = 4;
+      const rightSpkX = 100 - wSpk - 4;
+      holes = `M${leftSpkX} 0H${leftSpkX + wSpk}V100H${leftSpkX}Z M${rightSpkX} 0H${rightSpkX + wSpk}V100H${rightSpkX}Z`;
+      frames = `
+            <rect x="${leftSpkX}" y="0" width="${wSpk}" height="100" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-dasharray="2 1" />
+            <rect x="${rightSpkX}" y="0" width="${wSpk}" height="100" fill="none" stroke="rgba(244, 63, 94, 0.9)" stroke-width="${sw}" stroke-dasharray="2 1" />
           `;
     } else {
       holes = `M${xC} 0H${xC + w}V100H${xC}Z`;
@@ -984,6 +1004,11 @@ const initSegShortsPlayer = async (startTime) => {
   if (mode === 'split_left' || mode === 'split_right') {
     createPlayer('shorts-box-top', 'shorts-if-top', false);
     createPlayer('shorts-box-bottom', mode === 'split_left' ? 'shorts-if-bottom-left' : 'shorts-if-bottom-right', true);
+  } else if (mode === 'split_podcast') {
+    createPlayer('shorts-box-podcast-top', 'shorts-if-podcast-top', false);
+    createPlayer('shorts-box-podcast-bottom', 'shorts-if-podcast-bottom', true);
+  } else if (mode === 'podcast_speaker') {
+    createPlayer('shorts-box-podcast-speaker', 'shorts-if-podcast-speaker', false);
   } else if (mode === 'fit') {
     createPlayer('shorts-box-fit', 'shorts-if-fit', false);
   } else {
@@ -1233,7 +1258,8 @@ const fillSummary = () => {
   const fontName = $('subFont') ? $('subFont').value : 'Arial Black';
   const fontSize = $('subFontSize') ? $('subFontSize').value : '22';
   top.appendChild(mkKv('Crop mode', crop || '-'));
-  top.appendChild(mkKv('Subtitle', subOn ? `ON • Model: ${model} • Font: ${fontName} (${fontSize}px)` : 'OFF'));
+  const reviewNote = $('reviewSubtitles').checked ? ' • Tinjau sebelum render' : '';
+  top.appendChild(mkKv('Subtitle', subOn ? `ON • Model: ${model} • Font: ${fontName} (${fontSize}px)${reviewNote}` : 'OFF'));
   top.appendChild(mkKv('Total', segs.length + ' klip • ' + fmt(totalSec)));
   root.appendChild(top);
 
@@ -1413,12 +1439,114 @@ const setProgress = (p, status, eta, isActive = true) => {
   }
 };
 
-const poll = async () => {
-  if (!jobId) return;
+const captionReviewDialog = $('captionReviewDialog');
+const captionReviewVideo = $('captionReviewVideo');
+const captionReviewSrt = $('captionReviewSrt');
+const captionTrack = captionReviewVideo.addTextTrack('captions', 'Caption');
+captionTrack.mode = 'showing';
+let activeCaptionReview = null;
+let submittedReviewId = null;
+let pollPending = false;
+
+const updateCaptionReviewTrack = () => {
+  for (const cue of Array.from(captionTrack.cues || [])) captionTrack.removeCue(cue);
+  if (typeof VTTCue !== 'function') return;
+  const toSeconds = (timestamp) => {
+    const [h, m, s] = timestamp.replace(',', '.').split(':').map(Number);
+    return h * 3600 + m * 60 + s;
+  };
+  const timingPattern = /^(\d{2}:[0-5]\d:[0-5]\d,\d{3})\s+-->\s+(\d{2}:[0-5]\d:[0-5]\d,\d{3})$/;
+  for (const block of captionReviewSrt.value.trim().split(/\n(?:[ \t]*\n)+/)) {
+    const [, timing, ...lines] = block.split('\n');
+    const match = timing?.trim().match(timingPattern);
+    if (!match || lines.length === 0) continue;
+    const start = toSeconds(match[1]);
+    const end = toSeconds(match[2]);
+    if (end <= start) continue;
+    const text = lines.join('\n').replaceAll('&', '&amp;').replaceAll('<', '&lt;');
+    captionTrack.addCue(new VTTCue(start, end, text));
+  }
+};
+
+const stopCaptionReviewVideo = () => {
+  captionReviewVideo.pause();
+  captionReviewVideo.removeAttribute('src');
+  captionReviewVideo.load();
+};
+
+const closeCaptionReview = () => {
+  if (!activeCaptionReview) return;
+  activeCaptionReview = null;
+  stopCaptionReviewVideo();
+  captionReviewSrt.value = '';
+  updateCaptionReviewTrack();
+  captionReviewDialog.close();
+};
+
+const showCaptionReview = (review, currentJob) => {
+  if (review.review_id === submittedReviewId || review.review_id === activeCaptionReview?.reviewId) return;
+  closeCaptionReview();
+  const base = '/api/subtitle-review/' + encodeURIComponent(currentJob);
+  const videoUrl = apiUrl(base + '/' + encodeURIComponent(review.review_id) + '/video');
+  activeCaptionReview = { reviewId: review.review_id, base, videoUrl };
+  $('captionReviewTitle').textContent = 'Tinjau caption Clip #' + review.clip_index;
+  $('captionReviewError').textContent = '';
+  $('saveCaptionReview').disabled = false;
+  $('cancelCaptionReview').disabled = false;
+  captionReviewSrt.value = review.srt;
+  captionReviewVideo.src = videoUrl;
+  updateCaptionReviewTrack();
+  captionReviewDialog.showModal();
+};
+
+captionReviewSrt.addEventListener('input', updateCaptionReviewTrack);
+captionReviewDialog.addEventListener('cancel', (event) => event.preventDefault());
+$('cancelCaptionReview').addEventListener('click', () => $('btnCancelJob').click());
+$('saveCaptionReview').addEventListener('click', async () => {
+  const review = activeCaptionReview;
+  if (!review) return;
+  const button = $('saveCaptionReview');
+  const cancel = $('cancelCaptionReview');
+  button.disabled = true;
+  cancel.disabled = true;
+  $('captionReviewError').textContent = '';
+  const time = captionReviewVideo.currentTime;
+  stopCaptionReviewVideo();
   try {
-    const res = await fetch(apiUrl('/api/status/') + jobId);
+    const response = await fetch(apiUrl(review.base), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ review_id: review.reviewId, srt: captionReviewSrt.value }),
+    });
+    const data = await response.json();
+    if (review !== activeCaptionReview) return;
+    if (!data.ok) throw new Error(data.error || 'Gagal menyimpan caption.');
+    submittedReviewId = review.reviewId;
+    closeCaptionReview();
+    void poll();
+  } catch (error) {
+    if (review !== activeCaptionReview) return;
+    $('captionReviewError').textContent = errText(error);
+    captionReviewVideo.src = review.videoUrl;
+    captionReviewVideo.currentTime = time;
+  } finally {
+    if (review === activeCaptionReview) {
+      button.disabled = false;
+      cancel.disabled = false;
+    }
+  }
+});
+
+const poll = async () => {
+  if (!jobId || pollPending) return;
+  const currentJob = jobId;
+  pollPending = true;
+  try {
+    const res = await fetch(apiUrl('/api/status/') + currentJob, { cache: 'no-store' });
     const data = await res.json();
-    if (!data.ok) return;
+    if (!data.ok || jobId !== currentJob) return;
+    if (data.subtitle_review) showCaptionReview(data.subtitle_review, currentJob);
+    else closeCaptionReview();
     lastJobStatus = data;
     const isRunning = data.running && !data.done;
     setProgress(data.percent, data.status, data.eta, isRunning);
@@ -1480,7 +1608,9 @@ const poll = async () => {
         showResultModal(data);
       }
     }
-  } catch {}
+  } catch {} finally {
+    pollPending = false;
+  }
 };
 
 const startJob = async () => {
@@ -1492,6 +1622,7 @@ const startJob = async () => {
     segments: segs,
     crop_mode: $('crop').value,
     use_subtitle: $('subOn').checked,
+    review_subtitles: $('subOn').checked && $('reviewSubtitles').checked,
     whisper_model: $('model').value,
     subtitle_language: $('subLang') ? $('subLang').value : 'id',
     subtitle_position: $('subPos').value,
@@ -1988,17 +2119,34 @@ $('resultBtnDownloadAll')?.addEventListener('click', () => {
 $('btnCancelJob')?.addEventListener('click', async () => {
   if (!jobId) return;
   if (!confirm('Yakin ingin membatalkan proses klip yang sedang berjalan?')) return;
+  const review = activeCaptionReview;
+  const cancelReview = $('cancelCaptionReview');
+  const saveReview = $('saveCaptionReview');
+  if (review) {
+    cancelReview.disabled = true;
+    saveReview.disabled = true;
+    stopCaptionReviewVideo();
+  }
   try {
     $('status').textContent = 'Membatalkan proses...';
     const btnCancel = $('btnCancelJob');
     if (btnCancel) btnCancel.disabled = true;
     const res = await fetch(apiUrl('/api/cancel/' + encodeURIComponent(jobId)), { method: 'POST' });
     const data = await res.json();
-    if (data.ok) {
-      uiAlert('Job berhasil dibatalkan.', { type: 'info' });
-    }
+    if (!data.ok) throw new Error(data.error || 'Gagal membatalkan job.');
+    if (review) submittedReviewId = review.reviewId;
+    closeCaptionReview();
+    uiAlert('Job berhasil dibatalkan.', { type: 'info' });
+    void poll();
   } catch (e) {
-    uiAlert('Gagal membatalkan job: ' + errText(e), { type: 'error' });
+    if (review && review === activeCaptionReview) {
+      captionReviewVideo.src = review.videoUrl;
+      $('captionReviewError').textContent = 'Gagal membatalkan job: ' + errText(e);
+      cancelReview.disabled = false;
+      saveReview.disabled = false;
+    } else {
+      uiAlert('Gagal membatalkan job: ' + errText(e), { type: 'error' });
+    }
   } finally {
     const btnCancel = $('btnCancelJob');
     if (btnCancel) btnCancel.disabled = false;
@@ -2456,6 +2604,11 @@ const initMainShortsPlayer = async (startTime) => {
   if (mode === 'split_left' || mode === 'split_right') {
     createPlayer('shorts-box-top', 'shorts-if-top', false);
     createPlayer('shorts-box-bottom', mode === 'split_left' ? 'shorts-if-bottom-left' : 'shorts-if-bottom-right', true);
+  } else if (mode === 'split_podcast') {
+    createPlayer('shorts-box-podcast-top', 'shorts-if-podcast-top', false);
+    createPlayer('shorts-box-podcast-bottom', 'shorts-if-podcast-bottom', true);
+  } else if (mode === 'podcast_speaker') {
+    createPlayer('shorts-box-podcast-speaker', 'shorts-if-podcast-speaker', false);
   } else if (mode === 'fit') {
     createPlayer('shorts-box-fit', 'shorts-if-fit', false);
   } else {

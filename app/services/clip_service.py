@@ -135,8 +135,9 @@ def start_clip_job(data):
     payload = {
         "url": url,
         "segments": cleaned,
-        "crop_mode": crop_mode if crop_mode in ("default", "fit", "split_left", "split_right") else "default",
+        "crop_mode": crop_mode if crop_mode in ("default", "fit", "split_left", "split_right", "split_podcast", "podcast_speaker") else "default",
         "use_subtitle": use_subtitle,
+        "review_subtitles": use_subtitle and bool(data.get("review_subtitles")),
         "whisper_model": whisper_model,
         "subtitle_language": subtitle_language,
         "subtitle_position": subtitle_position,

@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2214%22%20rx%3D%223%22%20fill%3D%22%23111824%22%20stroke%3D%22%2348d0ff%22%20stroke-width%3D%221.6%22/%3E%3Cpath%20d%3D%22M10%209v6l6-3z%22%20fill%3D%22%2348d0ff%22/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=1.6" />
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=1.7" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
 </head>
 <body>
@@ -64,9 +64,11 @@
               </label>
               <select id="crop" class="seg-crop-select" style="width:auto; font-size:12px; padding:4px 8px; border-radius:8px; min-width:170px;">
                 <option value="default">default (center crop)</option>
-                <option value="fit">fit (blurred background)</option>
+                <option value="split_podcast">🎙️ split_podcast (50:50 Duo)</option>
+                <option value="podcast_speaker">🗣️ podcast_speaker (Wajah Bicara)</option>
                 <option value="split_left" selected>split_left (facecam kiri)</option>
                 <option value="split_right">split_right (facecam kanan)</option>
+                <option value="fit">fit (blurred background)</option>
               </select>
             </div>
             <!-- Preview Crop Line Checkbox -->
@@ -241,6 +243,10 @@
 
         <!-- Panel Pengaturan Subtitle Full-Width & Simetris -->
         <div id="subConfigPanel" style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; transition:all 0.25s ease;">
+          <label class="caption-review-option">
+            <input id="reviewSubtitles" type="checkbox" disabled />
+            Tinjau caption sebelum render
+          </label>
           
           <!-- Baris 1: Model Whisper, Bahasa, Posisi (3 Kolom Simetris) -->
           <div class="row" style="gap:12px; margin-bottom:14px;">
@@ -572,9 +578,11 @@
             </div>
             <select id="segCropModeSelect" class="seg-crop-select">
               <option value="default">default (center crop 9:16)</option>
-              <option value="fit">fit (blurred background / canvas blur)</option>
+              <option value="split_podcast">🎙️ split_podcast (50:50 Atas-Bawah)</option>
+              <option value="podcast_speaker">🗣️ podcast_speaker (Wajah Bicara)</option>
               <option value="split_left">split_left (facecam bawah kiri)</option>
               <option value="split_right">split_right (facecam bawah kanan)</option>
+              <option value="fit">fit (blurred background / canvas blur)</option>
             </select>
             <div class="muted" style="font-size: 11px; margin-top: 6px; line-height: 1.4;">
               Ubah mode crop di sini untuk langsung melihat perubahannya pada simulasi video di sebelah kiri.
@@ -674,6 +682,22 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="{{ url_for('static', path='seg_bulk_buttons_state.js') }}"></script>
   <script src="{{ url_for('static', path='open_folder_state.js') }}"></script>
-  <script src="{{ url_for('static', path='app.js') }}?v=1.7"></script>
+  <dialog id="captionReviewDialog" class="caption-review" aria-labelledby="captionReviewTitle">
+    <h3 id="captionReviewTitle">Tinjau caption</h3>
+    <div class="caption-review-grid">
+      <video id="captionReviewVideo" controls playsinline preload="metadata"></video>
+      <div>
+        <label for="captionReviewSrt">Teks dan waktu caption (SRT)</label>
+        <p class="muted">Pertahankan format <code>00:00:01,000 --&gt; 00:00:03,000</code> dan satu baris kosong antar-caption. Kosongkan teks untuk render tanpa caption. Waktu tinjau maksimal 30 menit per klip.</p>
+        <textarea id="captionReviewSrt" rows="12" maxlength="100000" spellcheck="false"></textarea>
+        <p id="captionReviewError" role="status"></p>
+      </div>
+    </div>
+    <div class="row">
+      <button id="cancelCaptionReview" type="button" class="btn">Batalkan job</button>
+      <button id="saveCaptionReview" type="button" class="btn primary">Simpan &amp; render</button>
+    </div>
+  </dialog>
+  <script src="{{ url_for('static', path='app.js') }}?v=1.8"></script>
 </body>
 </html>

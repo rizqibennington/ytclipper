@@ -129,6 +129,22 @@ class TestFeatures(unittest.TestCase):
             dur = s["end"] - s["start"]
             self.assertGreaterEqual(dur, 15, f"Segment duration {dur}s is too short for YouTube Shorts!")
 
+    def test_crop_modes_allowed_in_start_job(self):
+        from app.schemas.ai import StartJobRequest
+        req1 = StartJobRequest(
+            url="https://youtube.com/watch?v=12345678901",
+            segments=[{"start": 0, "end": 30}],
+            crop_mode="split_podcast",
+        )
+        self.assertEqual(req1.crop_mode, "split_podcast")
+
+        req2 = StartJobRequest(
+            url="https://youtube.com/watch?v=12345678901",
+            segments=[{"start": 0, "end": 30}],
+            crop_mode="podcast_speaker",
+        )
+        self.assertEqual(req2.crop_mode, "podcast_speaker")
+
 
 if __name__ == "__main__":
     unittest.main()

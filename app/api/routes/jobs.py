@@ -4,9 +4,11 @@ import zipfile
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.jobs import cancel_job, get_job
+from app.jobs import cancel_job, get_job, submit_subtitle_review
 from app.schemas import JobStatusResponse, StartJobRequest, StartJobResponse
+from app.schemas.jobs import SubtitleReviewRequest
 from app.services.clip_service import inspect_output_dir, start_clip_job
+from app.subtitle_ai import normalize_review_srt
 
 
 router = APIRouter()
@@ -31,6 +33,7 @@ def status(job_id: str):
     output_dir = job.get("output_dir")
     out_ok = None
     out_err = None
+    review = job.get("subtitle_review")
     if done and output_dir:
         inspected = inspect_output_dir(str(output_dir))
         output_dir = inspected.get("path")
@@ -54,7 +57,32 @@ def status(job_id: str):
         "files": job.get("files", []),
         "segments": job.get("segments", []),
         "ai_metadata": job.get("ai_metadata", {}),
+        "subtitle_review": {
+            "review_id": review["id"],
+            "clip_index": review["clip_index"],
+            "srt": review["srt"],
+        } if review and "edited" not in review else None,
     }
+
+
+@router.get("/subtitle-review/{job_id}/{review_id}/video")
+def subtitle_review_video(job_id: str, review_id: str):
+    job = get_job(job_id)
+    review = job.get("subtitle_review") if job else None
+    if not review or review["id"] != review_id or "edited" in review:
+        raise HTTPException(status_code=404, detail="Preview caption sudah tidak tersedia.")
+    return FileResponse(review["video_path"], media_type="video/mp4", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/subtitle-review/{job_id}")
+def save_subtitle_review(job_id: str, data: SubtitleReviewRequest):
+    try:
+        srt = normalize_review_srt(data.srt)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not submit_subtitle_review(job_id, data.review_id, srt):
+        raise HTTPException(status_code=409, detail="Sesi review caption sudah berakhir.")
+    return {"ok": True}
 
 
 @router.post("/cancel/{job_id}")

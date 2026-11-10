@@ -1,8 +1,17 @@
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.ai import StartJobRequest, StartJobResponse
 from app.schemas.base import OkResponse
+
+
+class SubtitleReviewRequest(BaseModel):
+    review_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    srt: str = Field(max_length=100_000)
+
+
+class SubtitleReviewDraft(SubtitleReviewRequest):
+    clip_index: int
 
 
 class JobStatusResponse(BaseModel):
@@ -22,6 +31,7 @@ class JobStatusResponse(BaseModel):
     files: list[str] = []
     segments: list[dict] | None = None
     ai_metadata: dict[str, Any] | None = None
+    subtitle_review: SubtitleReviewDraft | None = None
 
 
 __all__ = [

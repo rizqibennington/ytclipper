@@ -2,13 +2,14 @@ import os
 import re
 import subprocess
 import tempfile
+from threading import Lock
 
 from app.core_constants import DEFAULT_WHISPER_MODEL
 
 
 _WHISPER_MODEL = DEFAULT_WHISPER_MODEL
-_FASTER_WHISPER_MODEL = None
-_FASTER_WHISPER_MODEL_KEY = None
+_MODEL_CACHE = (None, None)
+_MODEL_LOCK = Lock()
 
 
 def _env_bool(name, default=False):
@@ -60,21 +61,19 @@ def get_whisper_model():
     return _WHISPER_MODEL
 
 
-def get_faster_whisper_model():
-    global _FASTER_WHISPER_MODEL, _FASTER_WHISPER_MODEL_KEY
+def get_faster_whisper_model(model_name=None):
+    global _MODEL_CACHE
 
     device = _env_str("YTCLIPPER_WHISPER_DEVICE", "cpu")
     compute_type = _env_str("YTCLIPPER_WHISPER_COMPUTE_TYPE", "int8")
-    key = (str(_WHISPER_MODEL), str(device), str(compute_type))
+    name = model_name or _WHISPER_MODEL
+    key = (name, device, compute_type)
+    with _MODEL_LOCK:
+        if _MODEL_CACHE[0] != key:
+            from faster_whisper import WhisperModel
 
-    if _FASTER_WHISPER_MODEL is not None and _FASTER_WHISPER_MODEL_KEY == key:
-        return _FASTER_WHISPER_MODEL
-
-    from faster_whisper import WhisperModel
-
-    _FASTER_WHISPER_MODEL = WhisperModel(_WHISPER_MODEL, device=device, compute_type=compute_type)
-    _FASTER_WHISPER_MODEL_KEY = key
-    return _FASTER_WHISPER_MODEL
+            _MODEL_CACHE = (key, WhisperModel(name, device=device, compute_type=compute_type))
+        return _MODEL_CACHE[1]
 
 
 def _run_ffmpeg(cmd):
@@ -175,9 +174,36 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def generate_subtitle(video_file, subtitle_file, language=None):
+_SRT_TIME = r"[0-9]{2}:[0-5][0-9]:[0-5][0-9],[0-9]{3}"
+_SRT_TIMING = re.compile(rf"({_SRT_TIME})\s+-->\s+({_SRT_TIME})")
+
+
+def normalize_review_srt(srt):
+    srt = srt.replace("\r\n", "\n").replace("\r", "\n").lstrip("\ufeff").strip()
+    if not srt:
+        return ""
+    if "\x00" in srt:
+        raise ValueError("Caption berisi karakter yang tidak valid.")
+
+    blocks = []
+    previous_end = ""
+    for index, block in enumerate(re.split(r"\n(?:[ \t]*\n)+", srt), start=1):
+        lines = block.split("\n")
+        timing = _SRT_TIMING.fullmatch(lines[1].strip()) if len(lines) >= 3 else None
+        number = lines[0].strip()
+        if not timing or not number.isascii() or not number.isdigit() or not any(line.strip() for line in lines[2:]):
+            raise ValueError(f"Format caption #{index} tidak valid. Gunakan nomor, waktu SRT, dan teks.")
+        start, end = timing.groups()
+        if start < previous_end or end <= start:
+            raise ValueError(f"Waktu caption #{index} terbalik atau bertumpuk dengan caption sebelumnya.")
+        previous_end = end
+        blocks.append(f"{index}\n{start} --> {end}\n" + "\n".join(lines[2:]))
+    return "\n\n".join(blocks) + "\n"
+
+
+def generate_subtitle(video_file, subtitle_file, language=None, model_name=None):
     try:
-        model = get_faster_whisper_model()
+        model = get_faster_whisper_model(model_name)
 
         with tempfile.TemporaryDirectory(prefix="ytclipper_asr_") as tmp:
             tmpdir = tempfile.TemporaryDirectory(dir=tmp)
